@@ -44,6 +44,15 @@ Node 서버를 띄울 수 있는 곳(Render, Fly.io, Railway, VPS 등)에 그대
 프론트엔드만 정적 호스팅에 따로 올릴 경우 `.env.example`을 참고해 `VITE_WS_URL`에 서버의 WebSocket 주소를 지정하세요.
 서버 상태는 `GET /health`에서 확인할 수 있습니다.
 
+### GitHub Pages
+
+`main`에 푸시하면 `.github/workflows/deploy-pages.yml`이 빌드해서 GitHub Pages에 올립니다.
+처음 한 번은 저장소 **Settings → Pages → Source**를 **GitHub Actions**로 설정해야 합니다.
+
+GitHub Pages는 정적 호스팅이라 실시간 서버를 실행할 수 없어서, 그대로 두면 **혼자 모드**(이동·책 읽기·사색은 모두 가능)로 동작합니다.
+여럿이 함께 쓰려면 `server/index.js`를 Node 호스팅에 따로 띄우고, 저장소 **Settings → Secrets and variables → Actions → Variables**에
+`WS_URL`(예: `wss://my-server.onrender.com/ws`)을 추가한 뒤 다시 배포하세요.
+
 ## 구조
 
 ```

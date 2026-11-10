@@ -203,7 +203,8 @@ export default function LibraryRoom({ profile, onLeave }) {
               </li>
             ))}
           </ul>
-          {status !== 'online' && <p className="panel-note">서버에 연결되지 않아 혼자 머무는 중이에요. 자동으로 다시 연결을 시도합니다.</p>}
+          {status === 'solo' && <p className="panel-note">이 주소에는 실시간 서버가 없어 혼자 머무는 서재예요. 조용히 책을 읽고 사색해 보세요.</p>}
+          {(status === 'offline' || status === 'connecting') && <p className="panel-note">서버에 연결되지 않아 혼자 머무는 중이에요. 자동으로 다시 연결을 시도합니다.</p>}
         </div>
       )}
       {panel === 'menu' && (

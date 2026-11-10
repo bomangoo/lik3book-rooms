@@ -220,6 +220,7 @@ input { font: inherit; }
 .dot.online { background: #7cff9a; box-shadow: 0 0 8px #7cff9a; }
 .dot.connecting { background: var(--gold); animation: blink 1s infinite; }
 .dot.offline { background: #ff8a6a; }
+.dot.solo { background: #b9c7ff; }
 @keyframes blink { 50% { opacity: 0.3; } }
 
 .icon-btn {

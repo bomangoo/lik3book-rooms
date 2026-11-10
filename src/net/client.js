@@ -3,12 +3,14 @@
 function defaultUrl() {
   const envUrl = import.meta.env.VITE_WS_URL
   if (envUrl) return envUrl
+  // GitHub Pages 같은 정적 호스팅에는 실시간 서버가 없으므로 혼자 모드로 동작
+  if (import.meta.env.VITE_STATIC_HOST === 'true' || location.hostname.endsWith('github.io')) return null
   const proto = location.protocol === 'https:' ? 'wss' : 'ws'
   return `${proto}://${location.host}/ws`
 }
 
 /**
- * @param {{ getHello: () => object, onMessage: (msg: any) => void, onStatus: (s: 'connecting'|'online'|'offline') => void }} opts
+ * @param {{ getHello: () => object, onMessage: (msg: any) => void, onStatus: (s: 'connecting'|'online'|'offline'|'solo') => void }} opts
  */
 export function createConnection({ getHello, onMessage, onStatus }) {
   let ws = null
@@ -17,11 +19,17 @@ export function createConnection({ getHello, onMessage, onStatus }) {
   let timer = null
   let queue = []
 
+  const url = defaultUrl()
+  if (!url) {
+    queueMicrotask(() => onStatus('solo'))
+    return { send() {}, close() {} }
+  }
+
   const open = () => {
     if (closed) return
     onStatus('connecting')
     try {
-      ws = new WebSocket(defaultUrl())
+      ws = new WebSocket(url)
     } catch {
       schedule()
       return
