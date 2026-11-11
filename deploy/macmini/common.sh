@@ -5,7 +5,7 @@ LOG_FILE="$HOME/Library/Logs/lik3book-rooms.log"
 REPO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 PORT="${PORT:-8787}"
 # 이 사이트에서 오는 접속만 허용 (쉼표로 여러 개)
-ALLOWED_ORIGINS="${ALLOWED_ORIGINS:-https://bomangoo.github.io,http://localhost:5173}"
+ALLOWED_ORIGINS="${ALLOWED_ORIGINS:-https://lik3book.p-e.kr,https://bomangoo.github.io,http://localhost:5173}"
 
 find_tailscale() {
   if command -v tailscale >/dev/null 2>&1; then

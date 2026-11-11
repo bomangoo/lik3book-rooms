@@ -68,7 +68,7 @@ git clone https://github.com/bomangoo/lik3book-rooms.git ~/lik3book-rooms
    - Name: `WS_URL`
    - Value: 위에서 나온 `wss://…/ws`
 2. **Actions** 탭 → **Deploy to GitHub Pages** → **Run workflow**
-3. https://bomangoo.github.io/lik3book-rooms/ 에 들어가서 왼쪽 위에 **초록 점 + "1호실"** 이 보이면 연결 성공!
+3. https://lik3book.p-e.kr 에 들어가서 왼쪽 위에 **초록 점 + "1호실"** 이 보이면 연결 성공!
 
 ## 관리 명령
 
@@ -84,10 +84,10 @@ git clone https://github.com/bomangoo/lik3book-rooms.git ~/lik3book-rooms
 설치할 때 환경 변수로 바꿀 수 있어요.
 
 ```bash
-ALLOWED_ORIGINS="https://bomangoo.github.io,https://내도메인.com" PORT=8787 ~/lik3book-rooms/deploy/macmini/install.sh
+ALLOWED_ORIGINS="https://lik3book.p-e.kr,https://bomangoo.github.io" PORT=8787 ~/lik3book-rooms/deploy/macmini/install.sh
 ```
 
-- `ALLOWED_ORIGINS`: 이 서버에 접속할 수 있는 웹사이트 주소. 기본값은 GitHub Pages 와 로컬 개발 주소예요. 다른 사이트가 이 서버를 몰래 쓰지 못하게 막아 줍니다. 나중에 도메인을 연결하면 여기에 추가하세요.
+- `ALLOWED_ORIGINS`: 이 서버에 접속할 수 있는 웹사이트 주소. 기본값은 `https://lik3book.p-e.kr`, GitHub Pages, 로컬 개발 주소예요. 다른 사이트가 이 서버를 몰래 쓰지 못하게 막아 줍니다. 나중에 도메인을 연결하면 여기에 추가하세요.
 - `PORT`: 서버 포트 (기본 8787). 바꾸면 Funnel 도 같은 포트로 다시 켜야 해요.
 
 ## 문제 해결
