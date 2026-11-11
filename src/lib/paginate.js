@@ -85,7 +85,8 @@ export function paginate(blocks, el, { headHtml = '' } = {}) {
         else hi = mid - 1
       }
       let cut = lo
-      const sp = text.lastIndexOf(' ', offset + cut)
+      // 띄어쓰기나 줄바꿈 자리에서 끊기
+      const sp = Math.max(text.lastIndexOf(' ', offset + cut), text.lastIndexOf('\n', offset + cut))
       if (sp > offset && sp - offset > cut * 0.6) cut = sp - offset + 1
       if (cut <= 0) {
         if (!cur.length) {
@@ -98,7 +99,7 @@ export function paginate(blocks, el, { headHtml = '' } = {}) {
       }
       cur.push({ ...item, text: text.slice(offset, offset + cut).trimEnd() })
       offset += cut
-      while (text[offset] === ' ') offset++
+      while (text[offset] === ' ' || text[offset] === '\n') offset++
       flush()
       if (offset >= text.length) break
     }

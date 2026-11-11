@@ -9,10 +9,12 @@ function parseFrontmatter(text) {
   if (!m) return { meta: {}, body: text }
   const meta = {}
   for (const line of m[1].split(/\r?\n/)) {
-    const kv = line.match(/^([\w-]+)\s*:\s*(.*?)\s*(#.*)?$/)
+    const kv = line.match(/^([\w-]+)\s*:\s*(.*)$/)
     if (!kv) continue
-    let v = kv[2]
-    if ((v.startsWith('"') && v.endsWith('"')) || (v.startsWith("'") && v.endsWith("'"))) v = v.slice(1, -1)
+    let v = kv[2].trim()
+    const q = v.match(/^"((?:[^"\\]|\\.)*)"|^'([^']*)'/)
+    if (q) v = q[1] != null ? q[1].replace(/\\(.)/g, '$1') : q[2]
+    else v = v.replace(/\s+#.*$/, '')
     meta[kv[1]] = v
   }
   return { meta, body: m[2] }
@@ -51,7 +53,8 @@ export function parseBlocks(body, dir) {
       blocks.push({ type: 'quote', text: stripInline(chunk.replace(/^>\s?/gm, '')) })
       continue
     }
-    blocks.push({ type: 'p', text: stripInline(chunk.replace(/\n/g, ' ')) })
+    // 문단 안의 줄바꿈은 그대로 살림 (시, 블로그 글의 짧은 줄)
+    blocks.push({ type: 'p', text: stripInline(chunk.replace(/[ \t]*\n[ \t]*/g, '\n')) })
   }
   return blocks
 }
@@ -86,6 +89,7 @@ for (const [path, text] of Object.entries(MD)) {
       title: meta.title || file,
       date: meta.date || '',
       category: meta.category || '서재지기의 일기',
+      source: meta.source || '',
       author: '서재지기',
       blocks: parseBlocks(body, dir),
     })

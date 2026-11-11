@@ -85,6 +85,11 @@ function Page({ page, item, number, side }) {
           <p>❦</p>
           <p className="end-title">{item.title}</p>
           <p className="end-sub">{item.kind === 'journal' ? `${item.date} · 서재지기` : '끝까지 읽어 주셔서 고마워요'}</p>
+          {item.source && (
+            <a className="end-link" href={item.source} target="_blank" rel="noreferrer" onPointerUp={(e) => e.stopPropagation()}>
+              블로그에서 보기 ↗
+            </a>
+          )}
         </div>
       )
     default:

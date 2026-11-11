@@ -1,0 +1,68 @@
+name: Import Naver Blog
+
+# Actions 탭 → "Import Naver Blog" → Run workflow 를 누를 때만 실행됩니다.
+on:
+  workflow_dispatch:
+    inputs:
+      categories:
+        description: '가져올 블로그 카테고리 (쉼표로 구분). 비우면 저장소 변수 NAVER_CATEGORIES 사용, 그것도 없으면 카테고리 목록만 보여 줌'
+        required: false
+        default: ''
+      post_urls:
+        description: '카테고리와 상관없이 꼭 가져올 글 주소 (쉼표로 구분, 선택)'
+        required: false
+        default: ''
+      overwrite:
+        description: '이미 가져온 글도 다시 가져오기 (블로그에서 글을 고쳤을 때)'
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+  pages: write
+  id-token: write
+
+concurrency:
+  group: import-naver
+  cancel-in-progress: false
+
+jobs:
+  import:
+    runs-on: ubuntu-latest
+    outputs:
+      changed: ${{ steps.commit.outputs.changed }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: 블로그 글 가져오기
+        run: node tools/import-naver.mjs
+        env:
+          NAVER_BLOG_ID: ${{ vars.NAVER_BLOG_ID || 'lik3book' }}
+          NAVER_CATEGORIES: ${{ inputs.categories || vars.NAVER_CATEGORIES }}
+          POST_URLS: ${{ inputs.post_urls }}
+          OVERWRITE: ${{ inputs.overwrite }}
+      - name: 빌드 확인
+        run: npm run build
+      - name: 커밋
+        id: commit
+        run: |
+          git add content/journal
+          if git diff --cached --quiet; then
+            echo "새로 가져온 글이 없어요."
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+          else
+            git config user.name "lik3book-bot"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git commit -m "네이버 블로그 글 가져오기"
+            git push
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          fi
+
+  deploy:
+    needs: import
+    if: needs.import.outputs.changed == 'true'
+    uses: ./.github/workflows/deploy-pages.yml

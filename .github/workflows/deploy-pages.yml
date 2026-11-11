@@ -4,6 +4,7 @@ on:
   push:
     branches: [main]
   workflow_dispatch:
+  workflow_call: # 블로그 글을 가져온 뒤 다시 배포할 때
 
 permissions:
   contents: read
@@ -19,6 +20,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.ref }} # 방금 커밋한 글까지 포함
       - uses: actions/setup-node@v4
         with:
           node-version: 22
