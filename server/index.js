@@ -11,6 +11,14 @@ import { WebSocketServer } from 'ws'
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const DIST = path.resolve(__dirname, '../dist')
 const PORT = Number(process.env.PORT || 8787)
+const HOST = process.env.HOST || '0.0.0.0'
+// 접속을 허용할 웹사이트 주소 (쉼표로 구분). 비워 두면 어디서든 접속 가능.
+// 예: ALLOWED_ORIGINS=https://bomangoo.github.io,http://localhost:5173
+const ALLOWED_ORIGINS = (process.env.ALLOWED_ORIGINS || '')
+  .split(',')
+  .map((s) => s.trim().replace(/\/$/, ''))
+  .filter(Boolean)
+const MAX_CONNECTIONS = Number(process.env.MAX_CONNECTIONS || 100)
 const ROOM_CAPACITY = 5
 const MAX_ROOMS = 200
 const MAP_W = 24
@@ -69,7 +77,16 @@ function serveStatic(pathname, res) {
   fs.createReadStream(file).pipe(res)
 }
 
-const wss = new WebSocketServer({ server, path: '/ws', maxPayload: 4 * 1024 })
+const wss = new WebSocketServer({
+  server,
+  path: '/ws',
+  maxPayload: 4 * 1024,
+  verifyClient: ({ origin }, done) => {
+    if (wss.clients.size >= MAX_CONNECTIONS) return done(false, 503, 'busy')
+    if (ALLOWED_ORIGINS.length && !ALLOWED_ORIGINS.includes(origin)) return done(false, 403, 'origin not allowed')
+    done(true)
+  },
+})
 
 function pickRoom(preferred) {
   if (preferred && rooms.has(preferred) && rooms.get(preferred).size < ROOM_CAPACITY) return preferred
@@ -214,6 +231,7 @@ const heartbeat = setInterval(() => {
 }, 25000)
 wss.on('close', () => clearInterval(heartbeat))
 
-server.listen(PORT, () => {
+server.listen(PORT, HOST, () => {
   console.log(`[winter-library] http://localhost:${PORT}  (ws: /ws, 방당 ${ROOM_CAPACITY}명)`)
+  console.log(`[winter-library] 허용된 사이트: ${ALLOWED_ORIGINS.length ? ALLOWED_ORIGINS.join(', ') : '모두'}`)
 })

@@ -46,7 +46,8 @@ npm run dev        # 웹(vite, :5173) + 실시간 서버(:8787) 동시 실행
 
 ### 배포
 
-- **Node 서버(멀티플레이)**: `npm run build && npm start` — 정적 파일과 WebSocket(`/ws`)을 한 서버에서 제공합니다 (Render, Fly.io 등).
+- **맥미니로 실시간 서버 (무료, 추천)**: [`deploy/macmini/README.md`](deploy/macmini/README.md) 를 따라 설치 스크립트 한 번이면 됩니다. Tailscale Funnel 로 공개하고, 나온 주소를 `WS_URL` 로 등록하면 GitHub Pages 화면에서 5명이 함께 머물 수 있어요.
+- **Node 서버(직접 호스팅)**: `npm run build && npm start` — 정적 파일과 WebSocket(`/ws`)을 한 서버에서 제공합니다. `ALLOWED_ORIGINS` 로 접속 가능한 사이트를 제한할 수 있어요.
 - **GitHub Pages**: `main`에 푸시하면 `.github/workflows/deploy-pages.yml`이 배포합니다. 저장소 **Settings → Pages → Source = GitHub Actions** 가 필요합니다.
   Pages에는 실시간 서버가 없어 **혼자 모드**로 동작하며, 외부 서버를 띄운 뒤 저장소 변수 `WS_URL`(예: `wss://my-server/ws`)을 넣으면 함께하기가 켜집니다.
 
