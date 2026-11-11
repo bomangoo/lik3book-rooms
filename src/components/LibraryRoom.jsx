@@ -1,15 +1,20 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { Game } from '../game/engine.js'
 import { createConnection } from '../net/client.js'
-import { randomBook } from '../content/books.js'
+import { randomBook } from '../content/library.js'
 import { CHARACTER_MAP } from '../game/characters.js'
+import { EMOTES, EMOTE_LABEL } from '../game/icons.js'
 import { startAmbience, stopAmbience, disposeAmbience } from '../audio/ambience.js'
-import BookModal from './BookModal.jsx'
+import LibraryShelf from './LibraryShelf.jsx'
+import JournalDesk from './JournalDesk.jsx'
+import BookReader from './BookReader.jsx'
 import ThinkOverlay from './ThinkOverlay.jsx'
+import ActionMenu from './ActionMenu.jsx'
 import CharacterPreview from './CharacterPreview.jsx'
+import PixelIcon from './PixelIcon.jsx'
 
-const EMOTES = ['👋', '☕', '❤️', '✨', '😴']
 const CAPACITY = 5
+const isTouch = () => window.matchMedia('(pointer: coarse)').matches
 
 export default function LibraryRoom({ profile, onLeave }) {
   const canvasRef = useRef(null)
@@ -19,7 +24,8 @@ export default function LibraryRoom({ profile, onLeave }) {
   const [roomNo, setRoomNo] = useState(null)
   const [roster, setRoster] = useState({})
   const [self, setSelf] = useState({ pose: 'stand', seated: false })
-  const [modal, setModal] = useState(null) // {theme} | {book}
+  // 화면 위에 열린 창: null | {type:'menu', seated} | {type:'shelf'} | {type:'journal'} | {type:'read', item, back}
+  const [overlay, setOverlay] = useState(null)
   const [thinking, setThinking] = useState(false)
   const [sound, setSound] = useState(false)
   const [chat, setChat] = useState('')
@@ -36,8 +42,12 @@ export default function LibraryRoom({ profile, onLeave }) {
       onSelfChange: setSelf,
       onAction: (type, data) => {
         setHint(false)
-        if (type === 'shelf') setModal({ theme: data.theme })
-        else if (type === 'pile') setModal({ book: randomBook() })
+        if (type === 'shelf') setOverlay({ type: 'shelf' })
+        else if (type === 'pile') {
+          const b = randomBook()
+          if (b) setOverlay({ type: 'read', item: b })
+        } else if (type === 'journal') setOverlay({ type: 'journal' })
+        else if (type === 'menu') setOverlay({ type: 'menu', seated: data.seated })
       },
     })
     gameRef.current = game
@@ -62,7 +72,7 @@ export default function LibraryRoom({ profile, onLeave }) {
           }
           case 'join':
             game.addPlayer(msg.player)
-            game.showBubble(msg.player.id, '안녕하세요 ❄', 3000)
+            game.showBubble(msg.player.id, '안녕하세요', 3000)
             setRoster((r) => ({ ...r, [msg.player.id]: { name: msg.player.name, charId: msg.player.charId } }))
             break
           case 'leave':
@@ -89,7 +99,7 @@ export default function LibraryRoom({ profile, onLeave }) {
       },
     })
     connRef.current = conn
-    const t = setTimeout(() => setHint(false), 12000)
+    const t = setTimeout(() => setHint(false), 14000)
 
     return () => {
       clearTimeout(t)
@@ -99,40 +109,21 @@ export default function LibraryRoom({ profile, onLeave }) {
     }
   }, [profile])
 
-  // Enter 로 대화창 열기
+  // 창이 열려 있으면 캐릭터 이동 입력을 잠금
   useEffect(() => {
-    const onKey = (e) => {
-      if (e.key !== 'Enter' || modal || thinking) return
-      if (document.activeElement === chatInputRef.current) return
-      e.preventDefault()
-      setChatOpen(true)
-      setTimeout(() => chatInputRef.current?.focus(), 0)
-    }
-    window.addEventListener('keydown', onKey)
-    return () => window.removeEventListener('keydown', onKey)
-  }, [modal, thinking])
+    gameRef.current?.setInputLocked(!!overlay || thinking || chatOpen)
+  }, [overlay, thinking, chatOpen])
 
   const restPose = useCallback(() => {
     const g = gameRef.current
     if (!g) return
-    if (g.me.seat) g.setPose('sit')
-    else g.setPose('stand')
+    g.setPose(g.me.seat ? 'sit' : 'stand')
   }, [])
 
-  const onReadingChange = useCallback(
-    (reading) => {
-      const g = gameRef.current
-      if (!g) return
-      if (reading) g.setPose('read')
-      else restPose()
-    },
-    [restPose],
-  )
-
-  const closeModal = useCallback(() => {
-    setModal(null)
-    restPose()
-  }, [restPose])
+  const openChat = () => {
+    setChatOpen(true)
+    setTimeout(() => chatInputRef.current?.focus(), 0)
+  }
 
   const startThinking = () => {
     gameRef.current?.setPose('think')
@@ -143,13 +134,37 @@ export default function LibraryRoom({ profile, onLeave }) {
     restPose()
   }, [restPose])
 
+  const openBook = useCallback((item, back = null) => {
+    gameRef.current?.setPose('read')
+    setOverlay({ type: 'read', item, back })
+  }, [])
+
+  const closeOverlay = useCallback(() => {
+    setOverlay((o) => {
+      if (o?.type === 'read' && o.back) return { type: o.back }
+      return null
+    })
+    restPose()
+  }, [restPose])
+
+  const onMenuSelect = (id, arg) => {
+    const g = gameRef.current
+    setOverlay(null)
+    if (id === 'read') setOverlay({ type: 'shelf' })
+    else if (id === 'think') startThinking()
+    else if (id === 'chat') openChat()
+    else if (id === 'emote') g?.emote(arg)
+    else if (id === 'journal') setOverlay({ type: 'journal' })
+    else if (id === 'stand') g?.standUp()
+  }
+
   const sendChat = (e) => {
     e.preventDefault()
     const text = chat.trim()
     if (text) gameRef.current?.say(text.slice(0, 80))
     setChat('')
     chatInputRef.current?.blur()
-    if (window.matchMedia('(pointer: coarse)').matches) setChatOpen(false)
+    setChatOpen(false)
   }
 
   const toggleSound = () => {
@@ -165,6 +180,7 @@ export default function LibraryRoom({ profile, onLeave }) {
 
   const people = [{ id: 'me', name: profile.name, charId: profile.charId, me: true }, ...Object.entries(roster).map(([id, p]) => ({ id, ...p }))]
   const statusText = status === 'online' ? `${roomNo}호실` : status === 'connecting' ? '연결 중…' : '혼자 모드'
+  const seatedOrBusy = self.seated || self.pose !== 'stand'
 
   return (
     <div className="room">
@@ -173,18 +189,24 @@ export default function LibraryRoom({ profile, onLeave }) {
 
       {/* 상단 */}
       <div className="hud-top">
-        <button className="pill" onClick={() => setPanel(panel === 'people' ? null : 'people')}>
+        <button className="pill" onClick={() => { setHint(false); setPanel(panel === 'people' ? null : 'people') }}>
           <span className={`dot ${status}`} />
           <span className="pill-title">겨울 서재</span>
           <span className="pill-sub">{statusText}</span>
-          <span className="pill-count">👥 {people.length}/{CAPACITY}</span>
+          <span className="pill-count">
+            <PixelIcon name="people" size={18} /> {people.length}/{CAPACITY}
+          </span>
         </button>
         <div className="hud-top-right">
-          <button className={`icon-btn${sound ? ' on' : ''}`} onClick={toggleSound} aria-label="장작 소리" title="장작 소리">
-            {sound ? '🔊' : '🔈'}
+          <button className={`icon-btn${sound ? ' on' : ''}`} onClick={toggleSound} aria-label="음악과 장작 소리" title="음악과 장작 소리">
+            <PixelIcon name={sound ? 'music' : 'musicOff'} size={24} />
           </button>
-          <button className="icon-btn hide-touch" onClick={toggleFullscreen} aria-label="전체 화면" title="전체 화면">⛶</button>
-          <button className="icon-btn" onClick={() => setPanel(panel === 'menu' ? null : 'menu')} aria-label="메뉴" title="메뉴">☰</button>
+          <button className="icon-btn hide-touch" onClick={toggleFullscreen} aria-label="전체 화면" title="전체 화면">
+            <PixelIcon name="fullscreen" size={24} />
+          </button>
+          <button className="icon-btn" onClick={() => { setHint(false); setPanel(panel === 'menu' ? null : 'menu') }} aria-label="메뉴" title="메뉴">
+            <PixelIcon name="menu" size={24} />
+          </button>
         </div>
       </div>
 
@@ -210,32 +232,57 @@ export default function LibraryRoom({ profile, onLeave }) {
       {panel === 'menu' && (
         <div className="panel panel-right">
           <h3>{profile.name}</h3>
-          <button className="menu-item" onClick={() => { setPanel(null); setModal({ theme: 'poem' }) }}>📚 책장 둘러보기</button>
-          <button className="menu-item" onClick={() => { setPanel(null); startThinking() }}>💭 사색하기</button>
-          <button className="menu-item" onClick={onLeave}>🎭 캐릭터·이름 바꾸기</button>
-          <p className="panel-note">이동: 바닥 터치/클릭 · 방향키/WASD<br />상호작용: 책장·의자·벽난로·트리 누르기 (Space)<br />대화: Enter</p>
+          <button className="menu-item" onClick={() => { setPanel(null); setOverlay({ type: 'shelf' }) }}>
+            <PixelIcon name="shelf" size={22} /> 책장 둘러보기
+          </button>
+          <button className="menu-item" onClick={() => { setPanel(null); setOverlay({ type: 'journal' }) }}>
+            <PixelIcon name="journal" size={22} /> 서재지기의 책상
+          </button>
+          <button className="menu-item" onClick={() => { setPanel(null); startThinking() }}>
+            <PixelIcon name="thought" size={22} /> 사색하기
+          </button>
+          <button className="menu-item" onClick={onLeave}>
+            <PixelIcon name="face" size={22} /> 캐릭터·이름 바꾸기
+          </button>
+          <div className="keys">
+            <p><kbd>←</kbd><kbd>↑</kbd><kbd>↓</kbd><kbd>→</kbd> 걷기 · 고르기</p>
+            <p><kbd>Space</kbd> 앉기 · 살펴보기 · 행동 메뉴</p>
+            <p><kbd>Esc</kbd> 일어나기 · 닫기</p>
+          </div>
         </div>
       )}
 
       {hint && (
         <div className="hint" onClick={() => setHint(false)}>
-          바닥을 눌러 걸어 보세요. 책장, 책 더미, 의자, 벽난로를 누르면 반응해요 ✨
+          {isTouch()
+            ? '바닥을 눌러 걸어 보세요. 의자, 책장, 책상, 벽난로를 누르면 반응해요'
+            : '방향키로 걷고, Space로 앉거나 살펴봐요. 아무것도 없을 땐 Space로 행동 메뉴!'}
         </div>
       )}
 
       {/* 하단 */}
       <div className="hud-bottom">
-        {(self.seated || self.pose !== 'stand') && (
+        {seatedOrBusy && !overlay && (
           <div className="actions">
-            <button onClick={() => setModal({ theme: 'poem' })}>📖 책 읽기</button>
-            <button onClick={startThinking}>💭 사색하기</button>
-            {self.seated && <button onClick={() => gameRef.current?.standUp()}>🚶 일어나기</button>}
+            <button onClick={() => setOverlay({ type: 'shelf' })}>
+              <PixelIcon name="book" size={20} /> 책 읽기
+            </button>
+            <button onClick={startThinking}>
+              <PixelIcon name="thought" size={20} /> 사색하기
+            </button>
+            {self.seated && (
+              <button onClick={() => gameRef.current?.standUp()}>
+                <PixelIcon name="stand" size={20} /> 일어나기
+              </button>
+            )}
           </div>
         )}
         <div className="chatbar">
           <div className="emotes">
             {EMOTES.map((em) => (
-              <button key={em} onClick={() => gameRef.current?.emote(em)} aria-label={`감정 ${em}`}>{em}</button>
+              <button key={em} onClick={() => gameRef.current?.emote(em)} aria-label={EMOTE_LABEL[em]} title={EMOTE_LABEL[em]}>
+                <PixelIcon name={em} size={24} />
+              </button>
             ))}
           </div>
           {chatOpen ? (
@@ -245,7 +292,14 @@ export default function LibraryRoom({ profile, onLeave }) {
                 value={chat}
                 onChange={(e) => setChat(e.target.value)}
                 onBlur={() => !chat && setChatOpen(false)}
-                placeholder="조용히 한마디… (Enter)"
+                onKeyDown={(e) => {
+                  if (e.key === 'Escape') {
+                    setChat('')
+                    setChatOpen(false)
+                    e.currentTarget.blur()
+                  }
+                }}
+                placeholder="조용히 한마디… (Enter 보내기 · Esc 취소)"
                 maxLength={80}
                 enterKeyHint="send"
                 autoFocus
@@ -253,21 +307,17 @@ export default function LibraryRoom({ profile, onLeave }) {
               <button type="submit">보내기</button>
             </form>
           ) : (
-            <button className="chat-open" onClick={() => { setChatOpen(true); setTimeout(() => chatInputRef.current?.focus(), 0) }}>
-              💬 말하기
+            <button className="chat-open" onClick={openChat}>
+              <PixelIcon name="chat" size={20} /> 말하기
             </button>
           )}
         </div>
       </div>
 
-      {modal && (
-        <BookModal
-          initialTheme={modal.theme}
-          initialBook={modal.book}
-          onClose={closeModal}
-          onReadingChange={onReadingChange}
-        />
-      )}
+      {overlay?.type === 'menu' && <ActionMenu seated={overlay.seated} onSelect={onMenuSelect} onClose={() => setOverlay(null)} />}
+      {overlay?.type === 'shelf' && <LibraryShelf onOpen={(b) => openBook(b, 'shelf')} onClose={closeOverlay} />}
+      {overlay?.type === 'journal' && <JournalDesk onOpen={(j) => openBook(j, 'journal')} onClose={closeOverlay} />}
+      {overlay?.type === 'read' && <BookReader key={overlay.item.id} item={overlay.item} onClose={closeOverlay} />}
       {thinking && <ThinkOverlay onClose={stopThinking} />}
     </div>
   )

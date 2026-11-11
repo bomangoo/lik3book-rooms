@@ -2,6 +2,8 @@
 import { makeCanvas } from './pixel.js'
 import { getSprite, ANCHOR_X, ANCHOR_Y } from './characters.js'
 import { buildFurniture } from './furniture.js'
+import { SIT_OFFSET } from './seats.js'
+import { iconCanvas } from './icons.js'
 import { buildBackground, buildCeiling, buildYard, EXT_TOP, EXT_BOTTOM } from './background.js'
 import { findPath, nearestWalkable } from './pathfind.js'
 import {
@@ -16,10 +18,9 @@ const KEY_DIRS = {
   ArrowLeft: 'left', KeyA: 'left', ArrowRight: 'right', KeyD: 'right',
 }
 const DELTA = { up: [0, -1], down: [0, 1], left: [-1, 0], right: [1, 0] }
-const SEAT_OFFSET = { cushion: 3, armchairRight: 1 }
 
 const FIRE_LINES = ['따뜻하다…', '장작 타는 소리가 좋다', '손끝까지 녹는다', '타닥타닥…']
-const TREE_LINES = ['반짝반짝 ✨', '메리 크리스마스!', '소원을 하나 빌어볼까', '별이 예쁘다']
+const TREE_LINES = ['반짝반짝…', '메리 크리스마스!', '소원을 하나 빌어볼까', '별이 예쁘다']
 
 const tileCenter = (x, y) => [x * TILE + TILE / 2, y * TILE + 13]
 
@@ -305,14 +306,39 @@ export class Game {
   }
 
   // ─────────────── 입력 ───────────────
+  // 키보드: 방향키(이동) + Space/Enter(상호작용·메뉴) + Esc(일어나기)
   _onKeyDown(ev) {
+    if (this.inputLocked) return
     if (ev.target instanceof HTMLElement && ev.target.closest('input, textarea, [contenteditable], dialog, .modal')) return
     if (KEY_DIRS[ev.code]) {
       this.keys.add(ev.code)
+      if (!ev.repeat) this.tapDir = KEY_DIRS[ev.code] // 짧게 눌러도 한 칸은 움직이도록
       ev.preventDefault()
-    } else if (ev.code === 'Space' || ev.code === 'KeyE') {
+    } else if (ev.code === 'Space' || ev.code === 'Enter' || ev.code === 'NumpadEnter') {
       ev.preventDefault()
-      this._interactFacing()
+      if (!ev.repeat) this._primary()
+    } else if (ev.code === 'Escape') {
+      if (this.me.seat || this.me.pose !== 'stand') {
+        ev.preventDefault()
+        this.standUp()
+      }
+    }
+  }
+
+  /** Space: 앞에 있는 물건과 상호작용, 없으면(또는 앉아 있으면) 행동 메뉴 */
+  _primary() {
+    const m = this.me
+    if (m.step || m.path.length) return
+    if (!m.seat && this._interactFacing()) return
+    this.onAction('menu', { seated: !!m.seat })
+  }
+
+  /** React 쪽 메뉴/창이 열려 있는 동안 이동 입력을 막음 */
+  setInputLocked(locked) {
+    this.inputLocked = locked
+    if (locked) {
+      this.keys.clear()
+      this.tapDir = null
     }
   }
 
@@ -326,8 +352,9 @@ export class Game {
     const fx = m.tx + dx
     const fy = m.ty + dy
     const o = OBJECTS.find((ob) => ob.interact && fx >= ob.x && fx < ob.x + ob.w && fy >= ob.y && fy < ob.y + ob.h)
-    if (!o) return
+    if (!o) return false
     this._interactObject(o, fx, fy)
+    return true
   }
 
   _interactObject(o, tx, ty) {
@@ -404,8 +431,10 @@ export class Game {
     // 키보드 이동
     if (!m.step && !m.path.length) {
       const code = [...this.keys].reverse().find((k) => KEY_DIRS[k])
-      if (code) {
-        const dir = KEY_DIRS[code]
+      const held = code ? KEY_DIRS[code] : this.tapDir
+      this.tapDir = null
+      if (held) {
+        const dir = held
         if (m.pose !== 'stand' || m.seat) this.standUp()
         const [dx, dy] = DELTA[dir]
         const nx = m.tx + dx
@@ -510,7 +539,7 @@ export class Game {
       for (const l of f.layers) {
         list.push({
           sort: (f.o.y + f.o.h) * TILE + (l.sort ?? (f.o.seats ? -8 : 0)),
-          draw: () => g.drawImage(l.canvas, f.o.x * TILE + l.ox, f.o.y * TILE + l.oy),
+          draw: () => g.drawImage(l.canvas, f.o.x * TILE + l.ox + this._rock(f.o), f.o.y * TILE + l.oy),
         })
       }
     }
@@ -557,18 +586,30 @@ export class Game {
     return { body, extra }
   }
 
+  /** 누군가 앉은 흔들의자는 천천히 흔들림 */
+  _rock(o) {
+    if (o.type !== 'rockingChair') return 0
+    const seat = o.seats[0]
+    for (const e of this.players.values()) {
+      if (e.seat && e.seat.x === seat.x && e.seat.y === seat.y) return Math.round(Math.sin(this.time * 1.6))
+    }
+    return 0
+  }
+
   _drawPlayer(g, e) {
     const { body, extra } = this._poseSprite(e)
     const sprite = getSprite(e.charId, e.dir, body, extra)
     const bob = body === 'walkA' || body === 'walkB' ? -1 : 0
-    const sitOff = e.seat ? (SEAT_OFFSET[e.seat.object.type] ?? 0) : 0
+    const off = e.seat ? SIT_OFFSET[e.seat.object.type] || { x: 0, y: 0 } : { x: 0, y: 0 }
+    const sitOff = off.y
+    const rockX = e.seat ? this._rock(e.seat.object) : 0
     if (!e.seat) {
       g.fillStyle = 'rgba(20,10,10,0.3)'
       g.beginPath()
       g.ellipse(Math.round(e.px), Math.round(e.py) + 1, 6, 2, 0, 0, Math.PI * 2)
       g.fill()
     }
-    g.drawImage(sprite, Math.round(e.px - ANCHOR_X), Math.round(e.py - ANCHOR_Y + bob + sitOff))
+    g.drawImage(sprite, Math.round(e.px - ANCHOR_X + off.x + rockX), Math.round(e.py - ANCHOR_Y + bob + sitOff))
   }
 
   _drawWindowSnow(g) {
@@ -740,10 +781,13 @@ export class Game {
       // 상태 아이콘
       let topY = headY - fs * 0.4
       if (!e.bubble && (e.pose === 'read' || e.pose === 'think' || e.emote)) {
-        const icon = e.emote?.text || (e.pose === 'read' ? '📖' : '💭')
-        const bob = Math.sin(this.time * 2.4 + e.px) * fs * 0.15
-        ctx.font = `${fs * 1.2}px sans-serif`
-        ctx.fillText(icon, sx, topY - fs * 0.5 + bob)
+        const icon = iconCanvas(e.emote?.text || (e.pose === 'read' ? 'book' : 'thought'))
+        if (icon) {
+          const bob = Math.sin(this.time * 2.4 + e.px) * fs * 0.15
+          const size = Math.round(fs * 1.7)
+          ctx.imageSmoothingEnabled = false
+          ctx.drawImage(icon, Math.round(sx - size / 2), Math.round(topY - size - fs * 0.1 + bob), size, size)
+        }
       }
       // 말풍선
       if (e.bubble) this._drawBubble(ctx, sx, topY, e.bubble, fs)

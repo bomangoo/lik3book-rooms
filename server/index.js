@@ -18,6 +18,7 @@ const MAP_H = 16
 const CHARACTER_IDS = new Set(['doryeong', 'nangja', 'monk', 'tiger', 'rabbit', 'snowkid'])
 const POSES = new Set(['stand', 'sit', 'read', 'think'])
 const DIRS = new Set(['down', 'up', 'left', 'right'])
+const EMOTE_IDS = new Set(['wave', 'tea', 'heart', 'sparkle', 'sleep'])
 
 /** @type {Map<number, Map<string, any>>} roomNo -> (id -> player) */
 const rooms = new Map()
@@ -28,6 +29,10 @@ const MIME = {
   '.css': 'text/css; charset=utf-8',
   '.svg': 'image/svg+xml',
   '.png': 'image/png',
+  '.jpg': 'image/jpeg',
+  '.jpeg': 'image/jpeg',
+  '.webp': 'image/webp',
+  '.mp3': 'audio/mpeg',
   '.ico': 'image/x-icon',
   '.json': 'application/json',
   '.woff2': 'font/woff2',
@@ -176,8 +181,8 @@ wss.on('connection', (ws) => {
         break
       }
       case 'emote': {
-        const emote = String(msg.emote ?? '').slice(0, 4)
-        if (!emote) return
+        const emote = String(msg.emote ?? '')
+        if (!EMOTE_IDS.has(emote)) return
         broadcast(me.room, { t: 'emote', id: me.id, emote }, me.id)
         break
       }

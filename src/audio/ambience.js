@@ -1,79 +1,108 @@
-// 벽난로 장작 소리 (Web Audio 로 합성 — 별도 음원 파일 없음)
+// 서재의 소리: 배경음악 + 벽난로 + 책장 넘기는 소리
+// - 배경음악: AI 생성 피아노 곡(끝과 처음을 교차 페이드해 자연스럽게 반복)
+// - 벽난로/책장 소리: tools/make_audio.py 로 합성한 파일
+// Web Audio 버퍼 반복 재생이라 이음매 없이 끊김 없이 돕니다.
+
+const BASE = import.meta.env.BASE_URL || './'
+const FILES = {
+  bgm: `${BASE}audio/winter-library-bgm-loop.mp3`,
+  fire: `${BASE}audio/fireplace.mp3`,
+  flip: [1, 2, 3].map((i) => `${BASE}audio/page-flip-${i}.mp3`),
+}
+const LEVEL = { bgm: 0.42, fire: 0.3, flip: 0.55 }
+
 let ctx = null
 let master = null
-let crackleTimer = null
+let loops = null
+const buffers = new Map()
 
-function noiseBuffer(ac, seconds, brown = false) {
-  const len = ac.sampleRate * seconds
-  const buf = ac.createBuffer(1, len, ac.sampleRate)
-  const d = buf.getChannelData(0)
-  let last = 0
-  for (let i = 0; i < len; i++) {
-    const w = Math.random() * 2 - 1
-    if (brown) {
-      last = (last + 0.02 * w) / 1.02
-      d[i] = last * 3.5
-    } else d[i] = w
+function audioCtx() {
+  if (!ctx) {
+    const AC = window.AudioContext || window.webkitAudioContext
+    if (!AC) return null
+    ctx = new AC()
+    master = ctx.createGain()
+    master.gain.value = 1
+    master.connect(ctx.destination)
   }
-  return buf
+  if (ctx.state === 'suspended') ctx.resume()
+  return ctx
 }
 
-export function startAmbience() {
-  if (ctx) {
-    ctx.resume()
-    master.gain.setTargetAtTime(0.6, ctx.currentTime, 0.5)
+async function load(url) {
+  if (buffers.has(url)) return buffers.get(url)
+  const p = fetch(url)
+    .then((r) => r.arrayBuffer())
+    .then((data) => new Promise((res, rej) => ctx.decodeAudioData(data, res, rej)))
+  buffers.set(url, p)
+  return p
+}
+
+function loop(buffer, level) {
+  const src = ctx.createBufferSource()
+  src.buffer = buffer
+  src.loop = true
+  const gain = ctx.createGain()
+  gain.gain.value = 0
+  src.connect(gain).connect(master)
+  src.start()
+  gain.gain.setTargetAtTime(level, ctx.currentTime, 1.2)
+  return { src, gain, level }
+}
+
+/** 배경음악 + 벽난로 소리 켜기 (사용자 조작 안에서 호출해야 함) */
+export async function startAmbience() {
+  if (!audioCtx()) return
+  if (loops) {
+    for (const l of Object.values(loops)) l.gain.gain.setTargetAtTime(l.level, ctx.currentTime, 0.8)
     return
   }
-  const AC = window.AudioContext || window.webkitAudioContext
-  if (!AC) return
-  ctx = new AC()
-  master = ctx.createGain()
-  master.gain.value = 0
-  master.connect(ctx.destination)
-  master.gain.setTargetAtTime(0.6, ctx.currentTime, 0.8)
-
-  // 낮게 웅웅대는 불 소리
-  const rumble = ctx.createBufferSource()
-  rumble.buffer = noiseBuffer(ctx, 4, true)
-  rumble.loop = true
-  const lp = ctx.createBiquadFilter()
-  lp.type = 'lowpass'
-  lp.frequency.value = 420
-  const rg = ctx.createGain()
-  rg.gain.value = 0.35
-  rumble.connect(lp).connect(rg).connect(master)
-  rumble.start()
-
-  const pop = ctx.createBuffer(1, ctx.sampleRate * 0.03, ctx.sampleRate)
-  const pd = pop.getChannelData(0)
-  for (let i = 0; i < pd.length; i++) pd[i] = (Math.random() * 2 - 1) * (1 - i / pd.length) ** 3
-
-  const crackle = () => {
-    const n = 1 + Math.floor(Math.random() * 3)
-    for (let i = 0; i < n; i++) {
-      const s = ctx.createBufferSource()
-      s.buffer = pop
-      s.playbackRate.value = 0.6 + Math.random() * 1.2
-      const hp = ctx.createBiquadFilter()
-      hp.type = 'bandpass'
-      hp.frequency.value = 1500 + Math.random() * 3000
-      const g = ctx.createGain()
-      g.gain.value = 0.15 + Math.random() * 0.35
-      s.connect(hp).connect(g).connect(master)
-      s.start(ctx.currentTime + i * (0.02 + Math.random() * 0.05))
-    }
-    crackleTimer = setTimeout(crackle, 80 + Math.random() * 600)
-  }
-  crackle()
+  loops = {}
+  const [bgm, fire] = await Promise.all([load(FILES.bgm), load(FILES.fire)])
+  loops.bgm = loop(bgm, LEVEL.bgm)
+  loops.fire = loop(fire, LEVEL.fire)
 }
 
 export function stopAmbience() {
-  if (!ctx) return
-  master.gain.setTargetAtTime(0, ctx.currentTime, 0.3)
+  if (!ctx || !loops) return
+  for (const l of Object.values(loops)) l.gain.gain.setTargetAtTime(0, ctx.currentTime, 0.4)
 }
 
 export function disposeAmbience() {
-  clearTimeout(crackleTimer)
-  ctx?.close()
-  ctx = null
+  if (!ctx || !loops) return
+  for (const l of Object.values(loops)) {
+    try {
+      l.src.stop()
+    } catch {
+      /* 이미 멈춤 */
+    }
+  }
+  loops = null
+}
+
+let lastFlip = -1
+/** 책장 넘기는 소리 */
+export async function playPageFlip() {
+  if (!audioCtx()) return
+  let i = Math.floor(Math.random() * FILES.flip.length)
+  if (i === lastFlip) i = (i + 1) % FILES.flip.length
+  lastFlip = i
+  try {
+    const buf = await load(FILES.flip[i])
+    const src = ctx.createBufferSource()
+    src.buffer = buf
+    src.playbackRate.value = 0.92 + Math.random() * 0.16
+    const g = ctx.createGain()
+    g.gain.value = LEVEL.flip
+    src.connect(g).connect(master)
+    src.start()
+  } catch {
+    /* 소리 없이 계속 */
+  }
+}
+
+/** 미리 받아두기 (첫 넘김이 늦지 않도록) */
+export function preloadPageFlip() {
+  if (!audioCtx()) return
+  FILES.flip.forEach((u) => load(u).catch(() => {}))
 }

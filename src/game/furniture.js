@@ -1,6 +1,7 @@
 // 가구 스프라이트 (모두 코드로 그리는 픽셀 아트)
 import { makeCanvas, painter, outline, rng, pick, shade } from './pixel.js'
 import { TILE } from './map.js'
+import { buildSeat } from './seats.js'
 
 const OUT = '#2a1813'
 const BOOK_PALETTE = [
@@ -148,122 +149,6 @@ function fireplace(o) {
     layers: [{ canvas: c, ox: 0, oy: TILE - h }],
     fire: { x: 16, y: 34 - (h - TILE), w: w - 32, h: h - 34 },
     candles: [{ x: 7, y: 13 - (h - TILE) }, { x: w - 8, y: 13 - (h - TILE) }],
-  }
-}
-
-function bench(o) {
-  const w = o.w * TILE
-  const c = canvas(w, 18, (p) => {
-    p(1, 0, w - 2, 7, shade(o.color, -0.25))
-    p(2, 1, 9, 6, '#f2c14e')
-    p(3, 2, 2, 2, '#ffe39a')
-    p(w - 11, 1, 9, 6, '#e8dcc8')
-    p(w - 10, 2, 2, 2, '#ffffff')
-    p(1, 7, w - 2, 5, o.color)
-    p(1, 7, w - 2, 1, shade(o.color, 0.25))
-    p(1, 12, w - 2, 6, WOOD)
-    for (let x = 4; x < w - 2; x += 8) p(x, 13, 5, 4, WOOD_L)
-  })
-  return { layers: [{ canvas: c, ox: 0, oy: TILE - 18 }] }
-}
-
-function armchairUp(o) {
-  const col = o.color
-  const dark = shade(col, -0.3)
-  const back = canvas(22, 16, (p) => {
-    p(1, 0, 20, 16, dark)
-    p(3, 1, 16, 8, col)
-    p(0, 2, 4, 14, col)
-    p(18, 2, 4, 14, col)
-    p(0, 2, 4, 1, shade(col, 0.25))
-    p(18, 2, 4, 1, shade(col, 0.25))
-  })
-  const front = canvas(22, 14, (p) => {
-    p(1, 0, 20, 12, col)
-    p(1, 0, 20, 1, shade(col, 0.25))
-    for (const x of [5, 10, 15]) p(x, 4, 2, 2, dark)
-    p(2, 12, 2, 2, WOOD_D)
-    p(18, 12, 2, 2, WOOD_D)
-  })
-  return {
-    layers: [
-      { canvas: back, ox: -3, oy: 0 },
-      { canvas: front, ox: -3, oy: 6, sort: 4 },
-    ],
-  }
-}
-
-function sofaUp(o) {
-  const w = o.w * TILE
-  const col = o.color
-  const dark = shade(col, -0.3)
-  const back = canvas(w + 8, 16, (p) => {
-    p(2, 0, w + 4, 16, dark)
-    p(4, 1, w, 8, col)
-    p(0, 2, 5, 14, col)
-    p(w + 3, 2, 5, 14, col)
-    p(0, 2, 5, 1, shade(col, 0.25))
-    p(w + 3, 2, 5, 1, shade(col, 0.25))
-  })
-  const front = canvas(w + 8, 14, (p) => {
-    p(1, 0, w + 6, 12, col)
-    p(1, 0, w + 6, 1, shade(col, 0.25))
-    for (let x = 7; x < w; x += 8) p(x, 5, 2, 2, dark)
-    for (let x = 4; x < w + 4; x += 16) p(x + 12, 1, 1, 10, dark)
-    p(3, 12, 2, 2, WOOD_D)
-    p(w + 3, 12, 2, 2, WOOD_D)
-  })
-  return {
-    layers: [
-      { canvas: back, ox: -4, oy: 0 },
-      { canvas: front, ox: -4, oy: 6, sort: 4 },
-    ],
-  }
-}
-
-function chairUp() {
-  const back = canvas(16, 12, (p) => {
-    p(2, 2, 12, 9, WOOD_L)
-    p(2, 2, 12, 1, '#b57a48')
-    p(2, 10, 2, 2, WOOD_D)
-    p(12, 10, 2, 2, WOOD_D)
-  })
-  const front = canvas(16, 14, (p) => {
-    p(2, 0, 12, 2, WOOD)
-    for (const x of [3, 7, 11]) p(x, 2, 2, 8, WOOD)
-    p(2, 10, 12, 2, WOOD)
-    p(2, 12, 2, 2, WOOD_D)
-    p(12, 12, 2, 2, WOOD_D)
-  })
-  return {
-    layers: [
-      { canvas: back, ox: 0, oy: 2 },
-      { canvas: front, ox: 0, oy: 5, sort: 4 },
-    ],
-  }
-}
-
-function armchairRight(o) {
-  const col = o.color
-  const dark = shade(col, -0.3)
-  const back = canvas(20, 24, (p) => {
-    p(0, 0, 6, 22, dark)
-    p(1, 1, 4, 20, col)
-    p(4, 4, 16, 3, col)
-    p(4, 9, 15, 10, col)
-    p(4, 9, 15, 1, shade(col, 0.25))
-    p(3, 20, 2, 4, WOOD_D)
-    p(16, 20, 2, 4, WOOD_D)
-  })
-  const front = canvas(20, 7, (p) => {
-    p(3, 0, 17, 6, col)
-    p(3, 0, 17, 1, shade(col, 0.25))
-  })
-  return {
-    layers: [
-      { canvas: back, ox: -3, oy: -6 },
-      { canvas: front, ox: -3, oy: 12, sort: 4 },
-    ],
   }
 }
 
@@ -422,17 +307,6 @@ function gift(o) {
   return { layers: [{ canvas: c, ox: 1, oy: TILE - 13 }] }
 }
 
-function cushion(o) {
-  const c = canvas(16, 10, (p) => {
-    p(1, 1, 14, 8, o.color)
-    p(1, 1, 14, 1, shade(o.color, 0.3))
-    p(2, 2, 12, 6, shade(o.color, 0.1))
-    p(7, 4, 2, 2, '#f2c14e')
-    p(1, 8, 14, 1, shade(o.color, -0.3))
-  })
-  return { layers: [{ canvas: c, ox: 0, oy: 6 }] }
-}
-
 function plant() {
   const c = canvas(16, 26, (p) => {
     p(3, 18, 10, 7, '#b5653b')
@@ -514,11 +388,12 @@ function tree(o) {
 }
 
 const BUILDERS = {
-  shelf, fireplace, bench, armchairUp, sofaUp, chairUp, armchairRight, sideTable, lampTable,
-  floorLamp, teaTable, desk, pile, gift, cushion, plant, tree,
+  shelf, fireplace, sideTable, lampTable, floorLamp, teaTable, desk, pile, gift, plant, tree,
 }
 
 export function buildFurniture(o) {
+  const seat = buildSeat(o)
+  if (seat) return seat
   const b = BUILDERS[o.type]
   if (!b) throw new Error(`unknown furniture ${o.type}`)
   return b(o)
