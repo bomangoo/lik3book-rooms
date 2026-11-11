@@ -1,0 +1,19 @@
+# Render 블루프린트: Render 대시보드 → New → Blueprint 에서 이 저장소를 고르면 실시간 서버가 만들어집니다.
+services:
+  - type: web
+    name: lik3book-rooms
+    runtime: node
+    plan: free
+    region: singapore # 한국과 가장 가까운 지역
+    branch: main
+    buildCommand: npm ci --omit=dev --no-audit --no-fund
+    startCommand: node server/index.js
+    healthCheckPath: /health
+    autoDeploy: true
+    envVars:
+      - key: NODE_VERSION
+        value: "22"
+      - key: NODE_ENV
+        value: production
+      - key: ALLOWED_ORIGINS
+        value: https://lik3book.p-e.kr,https://bomangoo.github.io

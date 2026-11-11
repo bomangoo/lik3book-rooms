@@ -25,6 +25,13 @@ export function createConnection({ getHello, onMessage, onStatus }) {
     return { send() {}, close() {} }
   }
 
+  // 무료 호스팅(Render 등)은 잠들어 있을 수 있어 미리 깨워 둠
+  try {
+    fetch(url.replace(/^ws/, 'http').replace(/\/ws$/, '/health'), { mode: 'no-cors', cache: 'no-store' }).catch(() => {})
+  } catch {
+    /* 무시 */
+  }
+
   const open = () => {
     if (closed) return
     onStatus('connecting')
@@ -64,7 +71,7 @@ export function createConnection({ getHello, onMessage, onStatus }) {
 
   const schedule = () => {
     clearTimeout(timer)
-    const delay = Math.min(15000, 1000 * 2 ** retry++)
+    const delay = Math.min(6000, 1000 * 2 ** retry++) // 잠든 무료 서버가 깨어나면 빨리 합류하도록 짧게
     timer = setTimeout(open, delay)
   }
 

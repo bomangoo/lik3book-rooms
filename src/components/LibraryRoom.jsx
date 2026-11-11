@@ -32,6 +32,7 @@ export default function LibraryRoom({ profile, onLeave }) {
   const [chatOpen, setChatOpen] = useState(false)
   const [panel, setPanel] = useState(null) // 'people' | 'menu'
   const [hint, setHint] = useState(true)
+  const [waking, setWaking] = useState(false)
   const chatInputRef = useRef(null)
 
   // ── 게임 & 연결 ──
@@ -109,6 +110,17 @@ export default function LibraryRoom({ profile, onLeave }) {
     }
   }, [profile])
 
+  // 연결이 4초 넘게 걸리면 '서버 깨우는 중' 으로 안내 (무료 서버가 잠들어 있을 때)
+  const settled = status === 'online' || status === 'solo'
+  useEffect(() => {
+    if (settled) {
+      setWaking(false)
+      return
+    }
+    const t = setTimeout(() => setWaking(true), 4000)
+    return () => clearTimeout(t)
+  }, [settled])
+
   // 창이 열려 있으면 캐릭터 이동 입력을 잠금
   useEffect(() => {
     gameRef.current?.setInputLocked(!!overlay || thinking || chatOpen)
@@ -179,7 +191,8 @@ export default function LibraryRoom({ profile, onLeave }) {
   }
 
   const people = [{ id: 'me', name: profile.name, charId: profile.charId, me: true }, ...Object.entries(roster).map(([id, p]) => ({ id, ...p }))]
-  const statusText = status === 'online' ? `${roomNo}호실` : status === 'connecting' ? '연결 중…' : '혼자 모드'
+  const statusText =
+    status === 'online' ? `${roomNo}호실` : status === 'connecting' || status === 'offline' ? (waking ? '서버 깨우는 중…' : '연결 중…') : '혼자 모드'
   const seatedOrBusy = self.seated || self.pose !== 'stand'
 
   return (
@@ -226,7 +239,7 @@ export default function LibraryRoom({ profile, onLeave }) {
             ))}
           </ul>
           {status === 'solo' && <p className="panel-note">이 주소에는 실시간 서버가 없어 혼자 머무는 서재예요. 조용히 책을 읽고 사색해 보세요.</p>}
-          {(status === 'offline' || status === 'connecting') && <p className="panel-note">서버에 연결되지 않아 혼자 머무는 중이에요. 자동으로 다시 연결을 시도합니다.</p>}
+          {(status === 'offline' || status === 'connecting') && <p className="panel-note">서버에 연결하는 중이에요. 무료 서버가 잠들어 있었다면 깨어나는 데 1분쯤 걸릴 수 있어요. 그동안은 혼자 머물다가 연결되면 자동으로 합류해요.</p>}
         </div>
       )}
       {panel === 'menu' && (
