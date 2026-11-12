@@ -46,13 +46,57 @@ const tag = (xml, name) => {
   return m ? decode(m[1]) : ''
 }
 
+const safeDecode = (s) => {
+  try {
+    return decodeURIComponent(s)
+  } catch {
+    return s
+  }
+}
+
 const logNoOf = (url) => (url.match(/(\d{9,})/) || [])[1]
+
+/** '2026. 5. 9. 10:42' 같은 네이버 날짜 → YYYY-MM-DD (상대 시간이면 오늘) */
+function parseDate(s) {
+  const m = s.match(/(\d{4})\.\s*(\d{1,2})\.\s*(\d{1,2})/)
+  if (m) return `${m[1]}-${m[2].padStart(2, '0')}-${m[3].padStart(2, '0')}`
+  return s ? kstDate(Date.now()) : ''
+}
 
 /** 한국 시간 기준 YYYY-MM-DD */
 function kstDate(d) {
   const t = new Date(d)
   if (Number.isNaN(t.getTime())) return new Date().toISOString().slice(0, 10)
   return new Date(t.getTime() + 9 * 3600 * 1000).toISOString().slice(0, 10)
+}
+
+const postHtmlCache = new Map()
+async function getPostHtml(logNo) {
+  if (!postHtmlCache.has(logNo)) {
+    postHtmlCache.set(
+      logNo,
+      await get(`https://blog.naver.com/PostView.naver?blogId=${BLOG_ID}&logNo=${logNo}&redirect=Dlog&widgetTypeCall=true&directAccess=false`),
+    )
+  }
+  return postHtmlCache.get(logNo)
+}
+
+/** 카테고리의 모든 글 번호와 제목 (RSS 는 최근 50개뿐이라 따로 목록을 읽음) */
+async function listCategory(categoryNo) {
+  const out = []
+  for (let page = 1; page <= 50; page++) {
+    const url = `https://blog.naver.com/PostTitleListAsync.naver?blogId=${BLOG_ID}&viewdate=&currentPage=${page}&categoryNo=${categoryNo}&parentCategoryNo=&countPerPage=30`
+    const text = await get(url)
+    const items = [...text.matchAll(/"logNo"\s*:\s*"(\d+)"[\s\S]*?"title"\s*:\s*"([^"]*)"/g)].map(([, logNo, t]) => ({
+      logNo,
+      title: safeDecode(t.replace(/\+/g, ' ')),
+    }))
+    const fresh = items.filter((i) => !out.some((o) => o.logNo === i.logNo))
+    out.push(...fresh)
+    const total = Number((text.match(/"totalCount"\s*:\s*"?(\d+)/) || [])[1] || 0)
+    if (!fresh.length || (total && out.length >= total)) break
+  }
+  return out
 }
 
 async function readFeed() {
@@ -74,6 +118,8 @@ function parsePost(html) {
   const meta = {
     title: clean(root.querySelector('.se-title-text')?.text || root.querySelector('.pcol1')?.text || ''),
     category: clean(root.querySelector('.blog2_series a, .cate a')?.text || ''),
+    date: parseDate(clean(root.querySelector('.se_publishDate, .date')?.text || '')),
+    categoryNo: (html.match(/categoryNo\s*[=:]\s*['"]?(\d+)/) || [])[1] || null,
   }
   const main = root.querySelector('.se-main-container')
   const blocks = []
@@ -178,8 +224,7 @@ async function importPost(item) {
   let blocks = []
   let meta = {}
   try {
-    const html = await get(`https://blog.naver.com/PostView.naver?blogId=${BLOG_ID}&logNo=${logNo}&redirect=Dlog&widgetTypeCall=true&directAccess=false`)
-    ;({ meta, blocks } = parsePost(html))
+    ;({ meta, blocks } = parsePost(await getPostHtml(logNo)))
   } catch (e) {
     console.warn(`  ! 본문 페이지를 읽지 못했어요 (${e.message}). RSS 요약으로 대신합니다.`)
   }
@@ -188,7 +233,7 @@ async function importPost(item) {
   const post = {
     title: item.title || meta.title || `블로그 글 ${logNo}`,
     category: item.category || meta.category || '서재지기의 일기',
-    date: kstDate(item.date),
+    date: item.date ? kstDate(item.date) : meta.date || kstDate(Date.now()),
     link: `https://blog.naver.com/${BLOG_ID}/${logNo}`,
   }
   const base = `${post.date}-naver-${logNo}`
@@ -209,7 +254,26 @@ async function main() {
   const targets = []
   if (CATEGORIES.length) {
     for (const it of feed) if (CATEGORIES.includes(it.category)) targets.push(it)
-    console.log(`\n카테고리 [${CATEGORIES.join(', ')}] 에서 ${targets.length}개`)
+    console.log(`\n카테고리 [${CATEGORIES.join(', ')}] 최근 글 ${targets.length}개`)
+    // RSS 에 없는 예전 글까지: 카테고리 번호를 찾아 전체 목록을 읽음
+    for (const name of CATEGORIES) {
+      const sample = feed.find((f) => f.category === name)
+      if (!sample) continue
+      try {
+        const { meta } = parsePost(await getPostHtml(logNoOf(sample.link)))
+        if (!meta.categoryNo) throw new Error('카테고리 번호를 찾지 못함')
+        const all = await listCategory(meta.categoryNo)
+        let added = 0
+        for (const p of all) {
+          if (targets.some((t) => logNoOf(t.link) === p.logNo)) continue
+          targets.push({ link: `https://blog.naver.com/${BLOG_ID}/${p.logNo}`, title: p.title, category: name, date: '', description: '' })
+          added++
+        }
+        console.log(`  · [${name}] 전체 ${all.length}개 (예전 글 ${added}개 추가)`)
+      } catch (e) {
+        console.warn(`  ! [${name}] 예전 글 목록을 읽지 못했어요: ${e.message}`)
+      }
+    }
   }
   for (const url of POST_URLS) {
     const logNo = logNoOf(url)
