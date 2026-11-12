@@ -81,20 +81,21 @@ async function getPostHtml(logNo) {
   return postHtmlCache.get(logNo)
 }
 
-/** 카테고리의 모든 글 번호와 제목 (RSS 는 최근 50개뿐이라 따로 목록을 읽음) */
-async function listCategory(categoryNo) {
+/** 블로그 전체 글 목록 {logNo, title, categoryNo} (RSS 는 최근 50개뿐이라 따로 읽음) */
+async function listAll() {
   const out = []
-  for (let page = 1; page <= 50; page++) {
-    const url = `https://blog.naver.com/PostTitleListAsync.naver?blogId=${BLOG_ID}&viewdate=&currentPage=${page}&categoryNo=${categoryNo}&parentCategoryNo=&countPerPage=30`
+  for (let page = 1; page <= 100; page++) {
+    const url = `https://blog.naver.com/PostTitleListAsync.naver?blogId=${BLOG_ID}&viewdate=&currentPage=${page}&categoryNo=0&parentCategoryNo=&countPerPage=30`
     const text = await get(url)
-    const items = [...text.matchAll(/"logNo"\s*:\s*"(\d+)"[\s\S]*?"title"\s*:\s*"([^"]*)"/g)].map(([, logNo, t]) => ({
-      logNo,
-      title: safeDecode(t.replace(/\+/g, ' ')),
+    const items = [...text.matchAll(/\{[^{}]*"logNo"[^{}]*\}/g)].map(([obj]) => ({
+      logNo: (obj.match(/"logNo"\s*:\s*"?(\d+)/) || [])[1],
+      title: safeDecode(((obj.match(/"title"\s*:\s*"([^"]*)"/) || [])[1] || '').replace(/\+/g, ' ')),
+      categoryNo: (obj.match(/"categoryNo"\s*:\s*"?(\d+)/) || [])[1],
     }))
-    const fresh = items.filter((i) => !out.some((o) => o.logNo === i.logNo))
+    if (page === 1 && !items.length) console.warn(`  ! 글 목록 형식을 읽지 못했어요: ${text.slice(0, 200)}`)
+    const fresh = items.filter((i) => i.logNo && !out.some((o) => o.logNo === i.logNo))
     out.push(...fresh)
-    const total = Number((text.match(/"totalCount"\s*:\s*"?(\d+)/) || [])[1] || 0)
-    if (!fresh.length || (total && out.length >= total)) break
+    if (!fresh.length) break
   }
   return out
 }
@@ -119,7 +120,6 @@ function parsePost(html) {
     title: clean(root.querySelector('.se-title-text')?.text || root.querySelector('.pcol1')?.text || ''),
     category: clean(root.querySelector('.blog2_series a, .cate a')?.text || ''),
     date: parseDate(clean(root.querySelector('.se_publishDate, .date')?.text || '')),
-    categoryNo: (html.match(/categoryNo\s*[=:]\s*['"]?(\d+)/) || [])[1] || null,
   }
   const main = root.querySelector('.se-main-container')
   const blocks = []
@@ -255,24 +255,28 @@ async function main() {
   if (CATEGORIES.length) {
     for (const it of feed) if (CATEGORIES.includes(it.category)) targets.push(it)
     console.log(`\n카테고리 [${CATEGORIES.join(', ')}] 최근 글 ${targets.length}개`)
-    // RSS 에 없는 예전 글까지: 카테고리 번호를 찾아 전체 목록을 읽음
-    for (const name of CATEGORIES) {
-      const sample = feed.find((f) => f.category === name)
-      if (!sample) continue
-      try {
-        const { meta } = parsePost(await getPostHtml(logNoOf(sample.link)))
-        if (!meta.categoryNo) throw new Error('카테고리 번호를 찾지 못함')
-        const all = await listCategory(meta.categoryNo)
+    // RSS 에 없는 예전 글까지: 전체 목록에서, RSS 로 확인된 같은 카테고리 글의 카테고리 번호로 골라냄
+    try {
+      const all = await listAll()
+      console.log(`  · 블로그 전체 글 ${all.length}개 확인`)
+      for (const name of CATEGORIES) {
+        const known = new Set(feed.filter((f) => f.category === name).map((f) => logNoOf(f.link)))
+        const nos = new Set(all.filter((p) => known.has(p.logNo) && p.categoryNo).map((p) => p.categoryNo))
+        if (!nos.size) {
+          console.warn(`  ! [${name}] 카테고리 번호를 찾지 못해 최근 글만 가져와요`)
+          continue
+        }
         let added = 0
-        for (const p of all) {
+        const inCat = all.filter((p) => nos.has(p.categoryNo))
+        for (const p of inCat) {
           if (targets.some((t) => logNoOf(t.link) === p.logNo)) continue
           targets.push({ link: `https://blog.naver.com/${BLOG_ID}/${p.logNo}`, title: p.title, category: name, date: '', description: '' })
           added++
         }
-        console.log(`  · [${name}] 전체 ${all.length}개 (예전 글 ${added}개 추가)`)
-      } catch (e) {
-        console.warn(`  ! [${name}] 예전 글 목록을 읽지 못했어요: ${e.message}`)
+        console.log(`  · [${name}] (카테고리 번호 ${[...nos].join(',')}) 전체 ${inCat.length}개, 예전 글 ${added}개 추가`)
       }
+    } catch (e) {
+      console.warn(`  ! 예전 글 목록을 읽지 못했어요: ${e.message}`)
     }
   }
   for (const url of POST_URLS) {
