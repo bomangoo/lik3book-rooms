@@ -39,9 +39,10 @@ export function parseBlocks(body, dir) {
       blocks.push({ type: 'break' })
       continue
     }
-    const img = chunk.match(/^!\[([^\]]*)\]\(([^)\s]+)\)$/)
+    // ![설명](그림.jpg) → 한 쪽 전체 그림, ![설명](그림.png "spot") → 글 사이의 작은 그림
+    const img = chunk.match(/^!\[([^\]]*)\]\(([^)\s]+)(?:\s+"([^"]*)")?\)$/)
     if (img) {
-      blocks.push({ type: 'img', alt: img[1], src: resolveAsset(dir, img[2]) })
+      blocks.push({ type: img[3] === 'spot' ? 'spot' : 'img', alt: img[1], src: resolveAsset(dir, img[2]) })
       continue
     }
     const h = chunk.match(/^(#{1,3})\s+(.*)$/)
@@ -75,6 +76,8 @@ for (const [path, text] of Object.entries(MD)) {
       author: meta.author || '',
       publisher: meta.publisher || '',
       tagline: meta.tagline || '',
+      moreUrl: meta.more_url || '',
+      moreLabel: meta.more_label || '책 더 알아보기',
       color: meta.color || '#c8a27a',
       order: Number(meta.order ?? 99),
       cover: resolveAsset(dir, meta.cover),

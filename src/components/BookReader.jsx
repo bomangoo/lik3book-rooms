@@ -85,6 +85,7 @@ function Page({ page, item, number, side }) {
           <p>❦</p>
           <p className="end-title">{item.title}</p>
           <p className="end-sub">{item.kind === 'journal' ? `${item.date} · 서재지기` : '끝까지 읽어 주셔서 고마워요'}</p>
+          {item.kind === 'book' && <MoreButton item={item} />}
           {item.source && (
             <a className="end-link" href={item.source} target="_blank" rel="noreferrer" onPointerUp={(e) => e.stopPropagation()}>
               블로그에서 보기 ↗
@@ -105,6 +106,12 @@ function Page({ page, item, number, side }) {
               </div>
             )}
             {page.items.map((it, i) => {
+              if (it.type === 'spot')
+                return (
+                  <figure key={i} className="pg-spot">
+                    <img src={it.src} alt={it.alt} draggable={false} />
+                  </figure>
+                )
               const Tag = it.type === 'h1' ? 'h2' : it.type === 'h2' ? 'h3' : it.type === 'quote' ? 'blockquote' : 'p'
               return (
                 <Tag key={i} className={blockClass(it)}>
@@ -117,6 +124,27 @@ function Page({ page, item, number, side }) {
         </div>
       )
   }
+}
+
+/** 마지막 장의 '다음 이야기가 궁금하시다면?' 버튼 */
+function MoreButton({ item }) {
+  const [note, setNote] = useState(false)
+  const stop = (e) => e.stopPropagation()
+  return (
+    <div className="more" onPointerDown={stop} onPointerUp={stop}>
+      <p className="more-q">다음 이야기가 궁금하시다면?</p>
+      {item.moreUrl ? (
+        <a className="more-btn" href={item.moreUrl} target="_blank" rel="noreferrer">
+          {item.moreLabel} →
+        </a>
+      ) : (
+        <button className="more-btn" type="button" onClick={() => setNote(true)}>
+          {item.moreLabel} →
+        </button>
+      )}
+      {note && <p className="more-note">곧 이어지는 이야기를 만날 수 있는 곳을 열어 둘게요.</p>}
+    </div>
+  )
 }
 
 /**
@@ -136,6 +164,23 @@ export default function BookReader({ item, onClose }) {
   const fs = Math.max(13, Math.min(19, pageW * 0.043))
 
   // 쪽 나누기 (화면 크기가 바뀌면 다시)
+  // 본문 글꼴이 늦게 도착하면 쪽 나누기가 어긋나므로, 글꼴이 준비된 뒤 다시 나눔
+  const [fontTick, setFontTick] = useState(0)
+  useEffect(() => {
+    let alive = true
+    const bump = () => alive && setFontTick((t) => t + 1)
+    if (document.fonts) {
+      Promise.all([document.fonts.load(`${fs}px "Gowun Batang"`), document.fonts.load(`bold ${fs}px "Gowun Batang"`)])
+        .then(() => document.fonts.ready)
+        .then(bump, bump)
+      document.fonts.addEventListener?.('loadingdone', bump)
+    }
+    return () => {
+      alive = false
+      document.fonts?.removeEventListener?.('loadingdone', bump)
+    }
+  }, [fs])
+
   useLayoutEffect(() => {
     const el = measureRef.current
     if (!el) return
@@ -156,7 +201,7 @@ export default function BookReader({ item, onClose }) {
     }
     all.push(...body, { kind: 'end' })
     setPages(all)
-  }, [item, pageW, pageH, fs])
+  }, [item, pageW, pageH, fs, fontTick])
 
   const coverOffset = pages?.[0]?.kind === 'cover' ? 1 : 0
   const viewCount = pages ? (spread ? Math.ceil((pages.length + coverOffset) / 2) : pages.length) : 0
@@ -307,10 +352,13 @@ export default function BookReader({ item, onClose }) {
       </button>
 
       {/* 측정용 (보이지 않음) */}
-      <div className={`page text-page measure ${item.kind === 'journal' ? 'journal' : ''}`} style={{ width: pageW, height: pageH, '--fs': `${fs}px` }} aria-hidden="true">
-        <header className="running">.</header>
-        <div className="page-body" ref={measureRef} />
-        <span className="folio">0</span>
+      {/* 실제 쪽과 같은 크기의 틀 안에 두어야 % 여백이 쪽 기준으로 계산됨 */}
+      <div className="measure-frame" style={{ width: pageW, height: pageH, '--pw': `${pageW}px`, '--ph': `${pageH}px`, '--fs': `${fs}px` }} aria-hidden="true">
+        <div className={`page text-page ${item.kind === 'journal' ? 'journal' : ''}`}>
+          <header className="running">.</header>
+          <div className="page-body" ref={measureRef} />
+          <span className="folio">0</span>
+        </div>
       </div>
 
       {pages && scene && (
