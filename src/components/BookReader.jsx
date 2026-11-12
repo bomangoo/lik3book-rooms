@@ -108,7 +108,7 @@ function Page({ page, item, number, side }) {
             {page.items.map((it, i) => {
               if (it.type === 'spot')
                 return (
-                  <figure key={i} className="pg-spot">
+                  <figure key={i} className={`pg-spot ${it.size || ''}`}>
                     <img src={it.src} alt={it.alt} draggable={false} />
                   </figure>
                 )

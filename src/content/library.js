@@ -39,10 +39,11 @@ export function parseBlocks(body, dir) {
       blocks.push({ type: 'break' })
       continue
     }
-    // ![설명](그림.jpg) → 한 쪽 전체 그림, ![설명](그림.png "spot") → 글 사이의 작은 그림
+    // ![설명](그림.jpg) → 한 쪽 전체 그림, ![설명](그림.png "spot") → 글 사이의 작은 그림 ("spot large" 는 조금 크게)
     const img = chunk.match(/^!\[([^\]]*)\]\(([^)\s]+)(?:\s+"([^"]*)")?\)$/)
     if (img) {
-      blocks.push({ type: img[3] === 'spot' ? 'spot' : 'img', alt: img[1], src: resolveAsset(dir, img[2]) })
+      const spot = (img[3] || '').startsWith('spot')
+      blocks.push({ type: spot ? 'spot' : 'img', size: spot && img[3].includes('large') ? 'lg' : '', alt: img[1], src: resolveAsset(dir, img[2]) })
       continue
     }
     const h = chunk.match(/^(#{1,3})\s+(.*)$/)

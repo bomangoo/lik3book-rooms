@@ -16,7 +16,7 @@ function html(items) {
   return items
     .map((it) =>
       it.type === 'spot'
-        ? `<figure class="pg-spot"><img src="${esc(it.src || '')}" alt=""></figure>`
+        ? `<figure class="pg-spot ${it.size || ''}"><img src="${esc(it.src || '')}" alt=""></figure>`
         : `<${TAG[it.type]} class="${blockClass(it)}">${esc(it.text)}</${TAG[it.type]}>`,
     )
     .join('')
@@ -67,7 +67,7 @@ export function paginate(blocks, el, { headHtml = '' } = {}) {
     }
     if (bl.type === 'spot') {
       // 작은 그림은 쪼갤 수 없으니 안 들어가면 다음 쪽으로
-      const item = { type: 'spot', src: bl.src, alt: bl.alt, b, o: 0 }
+      const item = { type: 'spot', src: bl.src, alt: bl.alt, size: bl.size, b, o: 0 }
       if (!cur.length) start = { b, o: 0 }
       if (!fits([...cur, item]) && cur.length) {
         flush()
