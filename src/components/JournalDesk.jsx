@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { JOURNAL, JOURNAL_CATEGORIES } from '../content/library.js'
 import PixelIcon from './PixelIcon.jsx'
 
@@ -9,10 +9,20 @@ export default function JournalDesk({ onOpen, onClose }) {
   const tabs = [ALL, ...JOURNAL_CATEGORIES]
   const [tab, setTab] = useState(0)
   const [sel, setSel] = useState(0)
+  const listRef = useRef(null)
   const list = useMemo(() => (tab === 0 ? JOURNAL : JOURNAL.filter((j) => j.category === tabs[tab])), [tab]) // eslint-disable-line
+
+  // 키보드로 고른 글이 늘 보이도록 (마우스·손가락으로 고를 때는 목록을 움직이지 않음)
+  const byKey = useRef(false)
+  useEffect(() => {
+    if (!byKey.current) return
+    byKey.current = false
+    listRef.current?.querySelector('button.selected')?.scrollIntoView({ block: 'nearest' })
+  }, [sel, tab])
 
   useEffect(() => {
     const onKey = (e) => {
+      if (e.key.startsWith('Arrow')) byKey.current = true
       if (e.repeat && (e.key === ' ' || e.key === 'Enter')) return
       if (e.key === 'ArrowRight') {
         e.preventDefault()
@@ -60,11 +70,11 @@ export default function JournalDesk({ onOpen, onClose }) {
             </button>
           ))}
         </nav>
-        <ul className="journal-list">
+        <ul className="journal-list" ref={listRef}>
           {list.length === 0 && <li className="empty">아직 글이 없어요</li>}
           {list.map((j, i) => (
             <li key={j.id}>
-              <button className={i === sel ? 'selected' : ''} onClick={() => onOpen(j)} onMouseEnter={() => setSel(i)}>
+              <button className={i === sel ? 'selected' : ''} onClick={() => onOpen(j)} onPointerEnter={(e) => e.pointerType === 'mouse' && setSel(i)}>
                 <span className="jl-cat">{j.category}</span>
                 <strong>{j.title}</strong>
                 <time>{j.date}</time>
