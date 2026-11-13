@@ -543,11 +543,18 @@ export class Game {
         })
       }
     }
+    for (const f of this.furniture) {
+      if (!f.fire && !f.candles && !f.treeLights) continue
+      list.push({ sort: (f.o.y + f.o.h) * TILE + 0.5, draw: () => this._drawObjectFx(g, f, t) })
+    }
+    // 벽난로 불티도 벽난로 깊이에서
+    const hearth = this.furniture.find((f) => f.fire)
+    if (hearth) list.push({ sort: (hearth.o.y + hearth.o.h) * TILE + 0.6, draw: () => this._drawSparks(g, true) })
+
     for (const e of this.players.values()) list.push({ sort: e.py, draw: () => this._drawPlayer(g, e) })
     list.sort((a, b) => a.sort - b.sort)
     for (const d of list) d.draw()
 
-    this._drawFlames(g, t)
     this._drawSparks(g)
     this._drawMarker(g)
     this._drawLighting(g, t)
@@ -641,8 +648,9 @@ export class Game {
     }
   }
 
-  _drawFlames(g, t) {
-    for (const f of this.furniture) {
+  /** 불꽃·촛불·트리 전구: 가구와 같은 깊이로 그려서 앞에 선 캐릭터가 가려지지 않게 */
+  _drawObjectFx(g, f, t) {
+    {
       const bx = f.o.x * TILE
       const by = f.o.y * TILE
       if (f.fire) {
@@ -695,8 +703,9 @@ export class Game {
     }
   }
 
-  _drawSparks(g) {
+  _drawSparks(g, embersOnly = false) {
     for (const s of this.sparks) {
+      if (!!s.ember !== embersOnly) continue
       g.globalAlpha = Math.max(0, Math.min(1, s.life))
       g.fillStyle = s.c
       g.fillRect(Math.round(s.x), Math.round(s.y), 1, 1)

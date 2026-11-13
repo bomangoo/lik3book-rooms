@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { Game } from '../game/engine.js'
 import { createConnection } from '../net/client.js'
-import { randomBook } from '../content/library.js'
+import { randomBook, findItem, nextPost } from '../content/library.js'
+import { loadLastRead, loadBookmark } from '../lib/bookmark.js'
 import { CHARACTER_MAP } from '../game/characters.js'
 import { EMOTES, EMOTE_LABEL } from '../game/icons.js'
 import { startAmbience, stopAmbience, disposeAmbience } from '../audio/ambience.js'
@@ -146,6 +147,7 @@ export default function LibraryRoom({ profile, onLeave }) {
     restPose()
   }, [restPose])
 
+  // back: 책을 닫으면 돌아갈 창 ({type:'shelf'} | {type:'journal', category, id})
   const openBook = useCallback((item, back = null) => {
     gameRef.current?.setPose('read')
     setOverlay({ type: 'read', item, back })
@@ -153,16 +155,27 @@ export default function LibraryRoom({ profile, onLeave }) {
 
   const closeOverlay = useCallback(() => {
     setOverlay((o) => {
-      if (o?.type === 'read' && o.back) return { type: o.back }
+      if (o?.type === 'read' && o.back) return o.back
       return null
     })
     restPose()
   }, [restPose])
 
+  /** 마지막으로 읽던 책/글 (다 읽지 않은 것만) */
+  const resumeItem = (() => {
+    const it = findItem(loadLastRead()?.id)
+    if (!it) return null
+    const mark = loadBookmark(it.id)
+    return mark?.progress >= 0.99 ? nextPost(it) || null : it
+  })()
+  const backFor = (it) => (it.kind === 'journal' ? { type: 'journal', category: it.category, id: it.id } : { type: 'shelf' })
+  const resume = () => resumeItem && openBook(resumeItem, backFor(resumeItem))
+
   const onMenuSelect = (id, arg) => {
     const g = gameRef.current
     setOverlay(null)
     if (id === 'read') setOverlay({ type: 'shelf' })
+    else if (id === 'resume') resume()
     else if (id === 'think') startThinking()
     else if (id === 'chat') openChat()
     else if (id === 'emote') g?.emote(arg)
@@ -277,6 +290,11 @@ export default function LibraryRoom({ profile, onLeave }) {
       <div className="hud-bottom">
         {seatedOrBusy && !overlay && (
           <div className="actions">
+            {resumeItem && (
+              <button onClick={resume} title={resumeItem.title}>
+                <PixelIcon name="bookmark" size={20} /> 이어 읽기
+              </button>
+            )}
             <button onClick={() => setOverlay({ type: 'shelf' })}>
               <PixelIcon name="book" size={20} /> 책 읽기
             </button>
@@ -327,10 +345,31 @@ export default function LibraryRoom({ profile, onLeave }) {
         </div>
       </div>
 
-      {overlay?.type === 'menu' && <ActionMenu seated={overlay.seated} onSelect={onMenuSelect} onClose={() => setOverlay(null)} />}
-      {overlay?.type === 'shelf' && <LibraryShelf onOpen={(b) => openBook(b, 'shelf')} onClose={closeOverlay} />}
-      {overlay?.type === 'journal' && <JournalDesk onOpen={(j) => openBook(j, 'journal')} onClose={closeOverlay} />}
-      {overlay?.type === 'read' && <BookReader key={overlay.item.id} item={overlay.item} onClose={closeOverlay} />}
+      {overlay?.type === 'menu' && (
+        <ActionMenu seated={overlay.seated} resumeTitle={resumeItem?.title} onSelect={onMenuSelect} onClose={() => setOverlay(null)} />
+      )}
+      {overlay?.type === 'shelf' && <LibraryShelf onOpen={(b) => openBook(b, { type: 'shelf' })} onClose={closeOverlay} />}
+      {overlay?.type === 'journal' && (
+        <JournalDesk
+          key={`${overlay.category || ''}`}
+          initialCategory={overlay.category || null}
+          initialId={overlay.id || null}
+          onOpen={(j) => openBook(j, backFor(j))}
+          onClose={closeOverlay}
+        />
+      )}
+      {overlay?.type === 'read' && (
+        <BookReader
+          key={overlay.item.id}
+          item={overlay.item}
+          next={nextPost(overlay.item)}
+          onNext={() => {
+            const n = nextPost(overlay.item)
+            if (n) openBook(n, backFor(n))
+          }}
+          onClose={closeOverlay}
+        />
+      )}
       {thinking && <ThinkOverlay onClose={stopThinking} />}
     </div>
   )

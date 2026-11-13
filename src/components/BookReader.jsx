@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { paginate, pageOf, blockClass, esc } from '../lib/paginate.js'
-import { loadBookmark, saveBookmark, clearBookmark } from '../lib/bookmark.js'
+import { loadBookmark, saveBookmark, clearBookmark, saveLastRead } from '../lib/bookmark.js'
 import { playPageFlip, preloadPageFlip } from '../audio/ambience.js'
 import PixelIcon from './PixelIcon.jsx'
 
@@ -33,7 +33,7 @@ function layoutFor({ w, h }) {
   return { spread, pageW: Math.round(pageH * ASPECT), pageH: Math.round(pageH) }
 }
 
-function Page({ page, item, number, side }) {
+function Page({ page, item, number, side, next, onNext }) {
   if (!page) return <div className={`page blank ${side || ''}`} />
   const cls = `page ${side || ''} ${item.kind === 'journal' ? 'journal' : ''}`
   switch (page.kind) {
@@ -84,8 +84,13 @@ function Page({ page, item, number, side }) {
         <div className={`${cls} end-page`}>
           <p>❦</p>
           <p className="end-title">{item.title}</p>
-          <p className="end-sub">{item.kind === 'journal' ? `${item.date} · 서재지기` : '끝까지 읽어 주셔서 고마워요'}</p>
+          <p className="end-sub">{item.kind === 'journal' ? `${item.date} · ${item.category}` : '끝까지 읽어 주셔서 고마워요'}</p>
           {item.kind === 'book' && <MoreButton item={item} />}
+          {next && (
+            <button className="more-btn next-post" type="button" onPointerDown={(e) => e.stopPropagation()} onPointerUp={(e) => e.stopPropagation()} onClick={onNext}>
+              다음 글: {next.title} →
+            </button>
+          )}
           {item.source && (
             <a className="end-link" href={item.source} target="_blank" rel="noreferrer" onPointerUp={(e) => e.stopPropagation()}>
               블로그에서 보기 ↗
@@ -149,9 +154,10 @@ function MoreButton({ item }) {
 
 /**
  * 한 장씩 넘기는 책
- * @param {{ item: any, onClose: () => void }} props item: 책 또는 서재지기 글
+ * @param {{ item: any, onClose: () => void, next?: any, onNext?: () => void }} props
+ *   item: 책 또는 서재지기 글, next: 같은 주제의 다음 글 (마지막 쪽에 '다음 글' 버튼)
  */
-export default function BookReader({ item, onClose }) {
+export default function BookReader({ item, onClose, next = null, onNext }) {
   const vp = useViewport()
   const { spread, pageW, pageH } = layoutFor(vp)
   const measureRef = useRef(null)
@@ -161,6 +167,11 @@ export default function BookReader({ item, onClose }) {
   const [toast, setToast] = useState(null)
   const posRef = useRef(loadBookmark(item.id)?.pos || null)
   const firstRef = useRef(true)
+  const targetRef = useRef(null) // 책갈피로 옮겨 가는 중인 화면 (그 전에는 책갈피를 덮어쓰지 않음)
+
+  useEffect(() => {
+    saveLastRead(item.id)
+  }, [item.id])
   const fs = Math.max(13, Math.min(19, pageW * 0.043))
 
   // 쪽 나누기 (화면 크기가 바뀌면 다시)
@@ -220,8 +231,9 @@ export default function BookReader({ item, onClose }) {
   useEffect(() => {
     if (!pages) return
     const idx = pageOf(pages, posRef.current)
-    const v = idx >= 0 ? viewOfPage(idx) : 0
-    setView(Math.min(v, viewCount - 1))
+    const v = Math.min(idx >= 0 ? viewOfPage(idx) : 0, viewCount - 1)
+    targetRef.current = v
+    setView(v)
     if (firstRef.current) {
       firstRef.current = false
       if (idx > 0) setToast('책갈피에서 이어 읽어요')
@@ -231,6 +243,10 @@ export default function BookReader({ item, onClose }) {
   // 쪽이 바뀔 때마다 책갈피 저장
   useEffect(() => {
     if (!pages || turn) return
+    if (targetRef.current != null) {
+      if (view !== targetRef.current) return
+      targetRef.current = null
+    }
     const { left, right } = viewPages(view)
     const pg = [left, right].find((p) => p?.start)
     if (pg) {
@@ -283,7 +299,9 @@ export default function BookReader({ item, onClose }) {
       if (e.repeat && (e.key === ' ' || e.key === 'Enter')) return
       if (e.key === 'ArrowRight' || e.key === ' ' || e.key === 'Enter') {
         e.preventDefault()
-        go(1)
+        // 마지막 쪽에서 한 번 더 넘기면 다음 글로
+        if (!turn && pages && view >= viewCount - 1 && next && onNext) onNext()
+        else go(1)
       } else if (e.key === 'ArrowLeft') {
         e.preventDefault()
         go(-1)
@@ -294,7 +312,7 @@ export default function BookReader({ item, onClose }) {
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [go, onClose])
+  }, [go, onClose, turn, pages, view, viewCount, next, onNext])
 
   // 스와이프 & 탭
   const drag = useRef(null)
@@ -370,11 +388,13 @@ export default function BookReader({ item, onClose }) {
         >
           {spread && (
             <div className="slot left">
-              {scene.base.left !== undefined && <Page page={scene.base.left} item={item} side="left" number={numberOf(scene.base.leftIdx)} />}
+              {scene.base.left !== undefined && <Page next={next} onNext={onNext} page={scene.base.left} item={item} side="left" number={numberOf(scene.base.leftIdx)} />}
             </div>
           )}
           <div className="slot right">
             <Page
+              next={next}
+              onNext={onNext}
               page={scene.base.right}
               item={item}
               side="right"
@@ -384,10 +404,10 @@ export default function BookReader({ item, onClose }) {
           {scene.leaf && (
             <div className={`leaf ${turn.dir > 0 ? 'fwd' : 'bwd'}`} onAnimationEnd={finishTurn}>
               <div className="face front">
-                <Page page={scene.leaf.front} item={item} side="right" number={numberOf(scene.leaf.frontIdx)} />
+                <Page next={next} onNext={onNext} page={scene.leaf.front} item={item} side="right" number={numberOf(scene.leaf.frontIdx)} />
               </div>
               <div className="face back">
-                <Page page={scene.leaf.back} item={item} side="left" number={numberOf(scene.leaf.backIdx)} />
+                <Page next={next} onNext={onNext} page={scene.leaf.back} item={item} side="left" number={numberOf(scene.leaf.backIdx)} />
               </div>
             </div>
           )}
@@ -427,7 +447,7 @@ export default function BookReader({ item, onClose }) {
           </button>
         </div>
       )}
-      <p className="reader-help">← → 넘기기 · Esc 닫기 · 읽던 곳은 자동으로 책갈피에 저장돼요</p>
+      <p className="reader-help">← → 넘기기{next ? ' · 마지막 쪽에서 → 다음 글' : ''} · Esc 닫기 · 읽던 곳은 자동으로 책갈피에 저장돼요</p>
     </div>
   )
 }

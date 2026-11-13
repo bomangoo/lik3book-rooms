@@ -924,3 +924,17 @@ kbd {
 }
 .more-btn:active { transform: translateY(2px); box-shadow: 0 1px 0 #9a4b1a; }
 .more-note { margin: 0; font-size: 0.75em; color: #8a6a50; }
+
+/* 서재지기의 책상: 주제 고르기 */
+.back-btn { width: 36px; height: 36px; flex: none; display: grid; place-items: center; border-radius: 10px; border: 1px solid rgba(255, 230, 168, 0.25); background: rgba(0, 0, 0, 0.25); }
+.journal-list .cat-card { grid-template-areas: 'name count' 'desc desc'; padding: 14px 16px; background-image: linear-gradient(180deg, #fbf3e2, #f1e3c4); }
+.cat-name { grid-area: name; font-size: 18px; color: #3a2620; }
+.cat-count { grid-area: count; justify-self: end; font-size: 13px; color: #8a6a50; }
+.cat-desc { grid-area: desc; font-family: var(--read-font); font-size: 13px; color: #6a4a38; }
+.journal-list .resume-card { background: #fff6dc; border-color: rgba(214, 51, 74, 0.35); }
+.resume-card .jl-cat { display: inline-flex; align-items: center; gap: 4px; background: #d6334a; }
+.jl-num { grid-area: cat; justify-self: start; min-width: 26px; padding: 2px 8px; border-radius: 999px; background: #3f8f5a; color: #fff; font-size: 12px; text-align: center; }
+.next-post { margin-top: 1em; max-width: 90%; white-space: normal; line-height: 1.4; }
+
+.am-label { display: flex; flex-direction: column; min-width: 0; }
+.am-label small { font-size: 12px; color: #cbb89a; max-width: 220px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-family: var(--read-font); }

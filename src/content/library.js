@@ -2,6 +2,7 @@
 // (빌드할 때 함께 묶이므로 별도 DB 없이 GitHub 에서 파일만 고치면 됩니다)
 
 const MD = import.meta.glob('/content/{books,journal}/**/*.md', { query: '?raw', import: 'default', eager: true })
+const CATEGORY_CONF = Object.values(import.meta.glob('/content/journal/categories.json', { import: 'default', eager: true }))[0] || {}
 const ASSETS = import.meta.glob('/content/**/*.{jpg,jpeg,png,webp,gif}', { query: '?url', import: 'default', eager: true })
 
 function parseFrontmatter(text) {
@@ -89,6 +90,7 @@ for (const [path, text] of Object.entries(MD)) {
     const file = path.split('/').pop().replace(/\.md$/, '')
     journal.push({
       id: `journal-${file}`,
+      file,
       kind: 'journal',
       title: meta.title || file,
       date: meta.date || '',
@@ -101,9 +103,37 @@ for (const [path, text] of Object.entries(MD)) {
 }
 
 books.sort((a, b) => a.order - b.order || a.title.localeCompare(b.title, 'ko'))
-journal.sort((a, b) => (b.date || '').localeCompare(a.date || '') || a.title.localeCompare(b.title, 'ko'))
+// 같은 날짜면 파일 이름(블로그 글 번호) 순서로
+const byOldest = (a, b) => (a.date || '').localeCompare(b.date || '') || a.file.localeCompare(b.file)
+journal.sort((a, b) => byOldest(b, a))
+
+/** 카테고리별 글 (content/journal/categories.json 의 order: oldest 면 처음 글부터) */
+const byCategory = {}
+for (const j of journal) (byCategory[j.category] ||= []).push(j)
+for (const [cat, list] of Object.entries(byCategory)) {
+  if (CATEGORY_CONF[cat]?.order === 'oldest') list.sort(byOldest)
+}
 
 export const BOOKS = books
 export const JOURNAL = journal
-export const JOURNAL_CATEGORIES = [...new Set(journal.map((j) => j.category))]
+export const JOURNAL_CATEGORIES = Object.keys(byCategory).map((name) => ({
+  name,
+  desc: CATEGORY_CONF[name]?.desc || '',
+  order: CATEGORY_CONF[name]?.order === 'oldest' ? 'oldest' : 'newest',
+  posts: byCategory[name],
+  latest: journal.find((j) => j.category === name)?.date || '',
+}))
+JOURNAL_CATEGORIES.sort((a, b) => b.latest.localeCompare(a.latest))
+export const postsOf = (category) => byCategory[category] || []
+
+const ALL_ITEMS = new Map([...books, ...journal].map((it) => [it.id, it]))
+export const findItem = (id) => ALL_ITEMS.get(id) || null
+
+/** 같은 카테고리에서 다음에 읽을 글 */
+export function nextPost(item) {
+  if (item?.kind !== 'journal') return null
+  const list = postsOf(item.category)
+  const i = list.findIndex((j) => j.id === item.id)
+  return i >= 0 ? list[i + 1] || null : null
+}
 export const randomBook = () => BOOKS[Math.floor(Math.random() * BOOKS.length)]
