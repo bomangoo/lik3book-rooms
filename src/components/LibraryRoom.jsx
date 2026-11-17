@@ -3,7 +3,6 @@ import { Game } from '../game/engine.js'
 import { createConnection } from '../net/client.js'
 import { randomBook, findItem, nextPost } from '../content/library.js'
 import { loadLastRead, loadBookmark } from '../lib/bookmark.js'
-import { CHARACTER_MAP } from '../game/characters.js'
 import { EMOTES, EMOTE_LABEL } from '../game/icons.js'
 import { startAmbience, stopAmbience, disposeAmbience } from '../audio/ambience.js'
 import LibraryShelf from './LibraryShelf.jsx'
@@ -11,6 +10,8 @@ import JournalDesk from './JournalDesk.jsx'
 import BookReader from './BookReader.jsx'
 import ThinkOverlay from './ThinkOverlay.jsx'
 import ActionMenu from './ActionMenu.jsx'
+import ChatLog from './ChatLog.jsx'
+import PeopleModal from './PeopleModal.jsx'
 import CharacterPreview from './CharacterPreview.jsx'
 import PixelIcon from './PixelIcon.jsx'
 
@@ -34,7 +35,27 @@ export default function LibraryRoom({ profile, onLeave }) {
   const [panel, setPanel] = useState(null) // 'people' | 'menu'
   const [hint, setHint] = useState(true)
   const [waking, setWaking] = useState(false)
+  const [log, setLog] = useState([]) // 대화 기록 {key, ts, name, text, self?, system?}
+  const [logOpen, setLogOpen] = useState(false)
+  const [unread, setUnread] = useState(0)
   const chatInputRef = useRef(null)
+  const rosterRef = useRef({})
+  const logOpenRef = useRef(false)
+  const activityRef = useRef(null)
+  const keySeq = useRef(0)
+
+  const addLog = useCallback((entry) => {
+    const e = { key: ++keySeq.current, ts: Date.now(), ...entry }
+    setLog((l) => [...l.slice(-99), e])
+    if (!logOpenRef.current && !entry.self) setUnread((n) => n + 1)
+  }, [])
+  useEffect(() => {
+    rosterRef.current = roster
+  }, [roster])
+  useEffect(() => {
+    logOpenRef.current = logOpen
+    if (logOpen) setUnread(0)
+  }, [logOpen])
 
   // ── 게임 & 연결 ──
   useEffect(() => {
@@ -49,6 +70,7 @@ export default function LibraryRoom({ profile, onLeave }) {
           const b = randomBook()
           if (b) setOverlay({ type: 'read', item: b })
         } else if (type === 'journal') setOverlay({ type: 'journal' })
+        else if (type === 'player') setOverlay({ type: 'people', id: data.id })
         else if (type === 'menu') setOverlay({ type: 'menu', seated: data.seated })
       },
     })
@@ -66,25 +88,51 @@ export default function LibraryRoom({ profile, onLeave }) {
             const r = {}
             for (const p of msg.players) {
               game.addPlayer(p)
-              r[p.id] = { name: p.name, charId: p.charId }
+              r[p.id] = { name: p.name, charId: p.charId, activity: p.activity || null }
             }
             setRoster(r)
             setRoomNo(msg.room)
+            // 들어오기 전 대화와 입장 안내
+            setLog([
+              ...(msg.history || []).map((h) => ({ key: ++keySeq.current, ts: h.ts, name: h.name, text: h.text })),
+              { key: ++keySeq.current, ts: Date.now(), system: true, text: `${msg.room}호실에 들어왔어요.${msg.players.length ? ` ${msg.players.map((p) => p.name).join(', ')}님이 함께 있어요.` : ''}` },
+            ])
+            // 다시 연결됐을 때 지금 하던 일 다시 알리기
+            if (activityRef.current) conn.send({ t: 'activity', activity: activityRef.current })
             break
           }
           case 'join':
             game.addPlayer(msg.player)
             game.showBubble(msg.player.id, '안녕하세요', 3000)
-            setRoster((r) => ({ ...r, [msg.player.id]: { name: msg.player.name, charId: msg.player.charId } }))
+            setRoster((r) => ({ ...r, [msg.player.id]: { name: msg.player.name, charId: msg.player.charId, activity: msg.player.activity || null } }))
+            addLog({ system: true, text: `${msg.player.name}님이 들어왔어요.` })
             break
-          case 'leave':
+          case 'leave': {
+            const who = rosterRef.current[msg.id]
             game.removePlayer(msg.id)
             setRoster((r) => {
               const n = { ...r }
               delete n[msg.id]
               return n
             })
+            if (who) addLog({ system: true, text: `${who.name}님이 나갔어요.` })
             break
+          }
+          case 'activity':
+            setRoster((r) => (r[msg.id] ? { ...r, [msg.id]: { ...r[msg.id], activity: msg.activity } } : r))
+            break
+          case 'wave': {
+            const from = rosterRef.current[msg.id]
+            game.showEmote(msg.id, 'wave')
+            if (msg.to === connRef.current?.myId) {
+              game.showBubble(msg.id, '안녕하세요!', 3500)
+              if (from) addLog({ system: true, text: `${from.name}님이 나에게 손을 흔들었어요.` })
+            } else {
+              const to = rosterRef.current[msg.to]
+              if (from && to) addLog({ system: true, text: `${from.name}님이 ${to.name}님에게 손을 흔들었어요.` })
+            }
+            break
+          }
           case 'move':
             game.remoteMove(msg.id, msg.x, msg.y, msg.dir)
             break
@@ -93,6 +141,7 @@ export default function LibraryRoom({ profile, onLeave }) {
             break
           case 'chat':
             game.showBubble(msg.id, msg.text)
+            addLog({ name: msg.name || rosterRef.current[msg.id]?.name || '누군가', text: msg.text })
             break
           case 'emote':
             game.showEmote(msg.id, msg.emote)
@@ -124,8 +173,8 @@ export default function LibraryRoom({ profile, onLeave }) {
 
   // 창이 열려 있으면 캐릭터 이동 입력을 잠금
   useEffect(() => {
-    gameRef.current?.setInputLocked(!!overlay || thinking || chatOpen)
-  }, [overlay, thinking, chatOpen])
+    gameRef.current?.setInputLocked(!!overlay || thinking || chatOpen || logOpen)
+  }, [overlay, thinking, chatOpen, logOpen])
 
   const restPose = useCallback(() => {
     const g = gameRef.current
@@ -171,6 +220,28 @@ export default function LibraryRoom({ profile, onLeave }) {
   const backFor = (it) => (it.kind === 'journal' ? { type: 'journal', category: it.category, id: it.id } : { type: 'shelf' })
   const resume = () => resumeItem && openBook(resumeItem, backFor(resumeItem))
 
+  // 지금 하는 일을 방 사람들에게 알리기 (읽는 책 / 사색)
+  useEffect(() => {
+    const it = overlay?.type === 'read' ? overlay.item : null
+    const a = it ? { kind: 'read', item: it.id, title: it.title } : thinking ? { kind: 'think' } : null
+    if (JSON.stringify(a) === JSON.stringify(activityRef.current)) return
+    activityRef.current = a
+    connRef.current?.send({ t: 'activity', activity: a })
+  }, [overlay, thinking])
+
+  const online = status === 'online'
+  const waveTo = (person) => {
+    gameRef.current?.emote('wave')
+    connRef.current?.send({ t: 'wave', to: person.id })
+    addLog({ system: true, self: true, text: `${person.name}님에게 손을 흔들었어요.` })
+    setOverlay(null)
+  }
+  const talkTo = (person) => {
+    setOverlay(null)
+    setChat(`${person.name}님, `)
+    openChat()
+  }
+
   const onMenuSelect = (id, arg) => {
     const g = gameRef.current
     setOverlay(null)
@@ -180,13 +251,18 @@ export default function LibraryRoom({ profile, onLeave }) {
     else if (id === 'chat') openChat()
     else if (id === 'emote') g?.emote(arg)
     else if (id === 'journal') setOverlay({ type: 'journal' })
+    else if (id === 'people') setOverlay({ type: 'people' })
+    else if (id === 'log') setLogOpen(true)
     else if (id === 'stand') g?.standUp()
   }
 
   const sendChat = (e) => {
     e.preventDefault()
     const text = chat.trim()
-    if (text) gameRef.current?.say(text.slice(0, 80))
+    if (text) {
+      gameRef.current?.say(text.slice(0, 120))
+      addLog({ self: true, name: profile.name, text: text.slice(0, 120) })
+    }
     setChat('')
     chatInputRef.current?.blur()
     setChatOpen(false)
@@ -215,7 +291,7 @@ export default function LibraryRoom({ profile, onLeave }) {
 
       {/* 상단 */}
       <div className="hud-top">
-        <button className="pill" onClick={() => { setHint(false); setPanel(panel === 'people' ? null : 'people') }}>
+        <button className="pill" onClick={() => { setHint(false); setPanel(null); setOverlay({ type: 'people' }) }}>
           <span className={`dot ${status}`} />
           <span className="pill-title">겨울 서재</span>
           <span className="pill-sub">{statusText}</span>
@@ -236,25 +312,6 @@ export default function LibraryRoom({ profile, onLeave }) {
         </div>
       </div>
 
-      {panel === 'people' && (
-        <div className="panel panel-left">
-          <h3>지금 서재에 있는 사람</h3>
-          <ul className="people">
-            {people.map((p) => (
-              <li key={p.id}>
-                <CharacterPreview charId={p.charId} scale={2} animate={false} />
-                <span>
-                  {p.name}
-                  {p.me && <em> (나)</em>}
-                </span>
-                <small>{CHARACTER_MAP[p.charId]?.name}</small>
-              </li>
-            ))}
-          </ul>
-          {status === 'solo' && <p className="panel-note">이 주소에는 실시간 서버가 없어 혼자 머무는 서재예요. 조용히 책을 읽고 사색해 보세요.</p>}
-          {(status === 'offline' || status === 'connecting') && <p className="panel-note">서버에 연결하는 중이에요. 무료 서버가 잠들어 있었다면 깨어나는 데 1분쯤 걸릴 수 있어요. 그동안은 혼자 머물다가 연결되면 자동으로 합류해요.</p>}
-        </div>
-      )}
       {panel === 'menu' && (
         <div className="panel panel-right">
           <h3>{profile.name}</h3>
@@ -308,7 +365,12 @@ export default function LibraryRoom({ profile, onLeave }) {
             )}
           </div>
         )}
+        <ChatLog log={log} open={false} />
         <div className="chatbar">
+          <button className={`icon-btn log-btn${unread ? ' has-new' : ''}`} onClick={() => setLogOpen(true)} aria-label="대화 기록" title="대화 기록">
+            <PixelIcon name="chat" size={22} />
+            {unread > 0 && <span className="badge">{unread > 9 ? '9+' : unread}</span>}
+          </button>
           <div className="emotes">
             {EMOTES.map((em) => (
               <button key={em} onClick={() => gameRef.current?.emote(em)} aria-label={EMOTE_LABEL[em]} title={EMOTE_LABEL[em]}>
@@ -331,7 +393,7 @@ export default function LibraryRoom({ profile, onLeave }) {
                   }
                 }}
                 placeholder="조용히 한마디… (Enter 보내기 · Esc 취소)"
-                maxLength={80}
+                maxLength={120}
                 enterKeyHint="send"
                 autoFocus
               />
@@ -345,6 +407,18 @@ export default function LibraryRoom({ profile, onLeave }) {
         </div>
       </div>
 
+      {logOpen && <ChatLog log={log} open onClose={() => setLogOpen(false)} />}
+      {overlay?.type === 'people' && (
+        <PeopleModal
+          people={people}
+          initialId={overlay.id}
+          online={online}
+          onWave={waveTo}
+          onTalk={talkTo}
+          onOpenItem={(it) => openBook(it, it.kind === 'journal' ? backFor(it) : { type: 'shelf' })}
+          onClose={() => setOverlay(null)}
+        />
+      )}
       {overlay?.type === 'menu' && (
         <ActionMenu seated={overlay.seated} resumeTitle={resumeItem?.title} onSelect={onMenuSelect} onClose={() => setOverlay(null)} />
       )}

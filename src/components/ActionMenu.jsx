@@ -12,6 +12,8 @@ export default function ActionMenu({ seated, resumeTitle, onSelect, onClose }) {
     { id: 'read', icon: 'book', label: '책 읽기' },
     { id: 'think', icon: 'thought', label: '사색하기' },
     { id: 'chat', icon: 'chat', label: '말하기' },
+    { id: 'people', icon: 'people', label: '함께 있는 사람' },
+    { id: 'log', icon: 'journal', label: '대화 기록' },
     { id: 'emote', icon: 'heart', label: '감정 표현' },
     { id: 'journal', icon: 'journal', label: '서재지기의 글' },
     seated ? { id: 'stand', icon: 'stand', label: '일어나기' } : null,

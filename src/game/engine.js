@@ -405,6 +405,14 @@ export class Game {
     const [wx, wy] = this._toWorld(ev)
     const tx = Math.floor(wx / TILE)
     const ty = Math.floor(wy / TILE)
+    // 다른 사람을 누르면 그 사람 카드 열기
+    const who = this.playerAt(wx, wy)
+    if (who) {
+      const m = this.me
+      if (!m.seat && !m.step) m.dir = dirToward(m.tx, m.ty, who.tx, who.ty)
+      this.onAction('player', { id: who.id })
+      return
+    }
     const hit = this._hitObject(wx, wy)
     if (hit) {
       this._interactObject(hit, tx, ty)
@@ -419,10 +427,23 @@ export class Game {
     }
   }
 
+  /** 화면의 한 점에 서 있는 다른 사람 (앞에 있는 사람 우선) */
+  playerAt(wx, wy) {
+    let best = null
+    for (const e of this.players.values()) {
+      if (e.isMe) continue
+      const top = e.py - ANCHOR_Y + 4
+      if (wx >= e.px - 8 && wx <= e.px + 8 && wy >= top && wy <= e.py + 4) {
+        if (!best || e.py > best.py) best = e
+      }
+    }
+    return best
+  }
+
   _onPointerMove(ev) {
     if (ev.pointerType === 'touch') return
     const [wx, wy] = this._toWorld(ev)
-    this.canvas.style.cursor = this._hitObject(wx, wy) ? 'pointer' : 'default'
+    this.canvas.style.cursor = this.playerAt(wx, wy) || this._hitObject(wx, wy) ? 'pointer' : 'default'
   }
 
   // ─────────────── 갱신 ───────────────

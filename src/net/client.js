@@ -53,6 +53,7 @@ export function createConnection({ getHello, onMessage, onStatus }) {
         return
       }
       if (msg.t === 'welcome') {
+        api.myId = msg.id
         onStatus('online')
         for (const m of queue) ws.send(JSON.stringify(m))
         queue = []
@@ -77,7 +78,8 @@ export function createConnection({ getHello, onMessage, onStatus }) {
 
   open()
 
-  return {
+  const api = {
+    myId: null,
     send(msg) {
       if (ws && ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify(msg))
       else if (msg.t === 'pose') queue = [msg] // 재접속 시 마지막 자세만 전달
@@ -88,4 +90,5 @@ export function createConnection({ getHello, onMessage, onStatus }) {
       ws?.close()
     },
   }
+  return api
 }

@@ -30,6 +30,11 @@ const EMOTE_IDS = new Set(['wave', 'tea', 'heart', 'sparkle', 'sleep'])
 
 /** @type {Map<number, Map<string, any>>} roomNo -> (id -> player) */
 const rooms = new Map()
+/** 호실별 최근 대화 (새로 들어온 사람에게 보여 줌, 메모리에만 두고 방이 비면 지움) */
+const histories = new Map()
+const HISTORY_SIZE = 30
+const CHAT_MAX = 120
+const clean = (v, n) => String(v ?? '').replace(/[\u0000-\u001f\u007f]/g, '').trim().slice(0, n)
 
 const MIME = {
   '.html': 'text/html; charset=utf-8',
@@ -107,7 +112,7 @@ function broadcast(roomNo, msg, exceptId) {
 }
 
 function publicPlayer(p) {
-  return { id: p.id, name: p.name, charId: p.charId, x: p.x, y: p.y, dir: p.dir, pose: p.pose }
+  return { id: p.id, name: p.name, charId: p.charId, x: p.x, y: p.y, dir: p.dir, pose: p.pose, activity: p.activity }
 }
 
 function cleanName(raw) {
@@ -156,6 +161,7 @@ wss.on('connection', (ws) => {
         y: clampInt(msg.y ?? 14, 0, MAP_H - 1),
         dir: DIRS.has(msg.dir) ? msg.dir : 'up',
         pose: POSES.has(msg.pose) ? msg.pose : 'stand',
+        activity: null,
       }
       room.set(me.id, me)
       send({
@@ -164,6 +170,7 @@ wss.on('connection', (ws) => {
         room: roomNo,
         capacity: ROOM_CAPACITY,
         players: [...room.values()].filter((p) => p.id !== me.id).map(publicPlayer),
+        history: histories.get(roomNo) || [],
       })
       broadcast(roomNo, { t: 'join', player: publicPlayer(me) }, me.id)
       return
@@ -192,9 +199,31 @@ wss.on('connection', (ws) => {
         const now = Date.now()
         if (now - lastChat < 800) return
         lastChat = now
-        const text = String(msg.text ?? '').replace(/[\u0000-\u001f\u007f]/g, '').trim().slice(0, 80)
+        const text = clean(msg.text, CHAT_MAX)
         if (!text) return
-        broadcast(me.room, { t: 'chat', id: me.id, text }, me.id)
+        const entry = { id: me.id, name: me.name, charId: me.charId, text, ts: now }
+        const h = histories.get(me.room) || []
+        h.push(entry)
+        histories.set(me.room, h.slice(-HISTORY_SIZE))
+        broadcast(me.room, { t: 'chat', ...entry }, me.id)
+        break
+      }
+      case 'activity': {
+        // 지금 하는 일: { kind: 'read', item, title } | { kind: 'think' } | null
+        const a = msg.activity
+        me.activity =
+          a && a.kind === 'read' ? { kind: 'read', item: clean(a.item, 80), title: clean(a.title, 60) } : a && a.kind === 'think' ? { kind: 'think' } : null
+        broadcast(me.room, { t: 'activity', id: me.id, activity: me.activity }, me.id)
+        break
+      }
+      case 'wave': {
+        // 특정 사람에게 인사
+        const now = Date.now()
+        if (now - lastChat < 800) return
+        lastChat = now
+        const to = rooms.get(me.room)?.get(String(msg.to ?? ''))
+        if (!to) return
+        broadcast(me.room, { t: 'wave', id: me.id, to: to.id }, me.id)
         break
       }
       case 'emote': {
@@ -212,7 +241,10 @@ wss.on('connection', (ws) => {
     if (room) {
       room.delete(me.id)
       broadcast(me.room, { t: 'leave', id: me.id })
-      if (room.size === 0) rooms.delete(me.room)
+      if (room.size === 0) {
+        rooms.delete(me.room)
+        histories.delete(me.room)
+      }
     }
     me = null
   })
